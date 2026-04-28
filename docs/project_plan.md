@@ -147,6 +147,110 @@ Wyjscie:
 4) lista ryzyk po stronie danych.
 ```
 
+#### Plan krok po kroku dla Zwidek (operacyjny)
+##### Etap 0 - Wejscie i przygotowanie (0.5 dnia)
+1. Potwierdzic liste monitorowanych itemow (ID + nazwa) i zapisac ja w dokumencie roboczym.
+2. Spisac z zespolom kontrakt zwracanego rekordu (`item_id`, `item_name`, `price`, `volume`, `observed_at`, `source`).
+3. Przygotowac roboczy plik notatek: endpointy, selektory, ryzyka.
+
+**Output etapu:**
+1. Lista itemow i kontrakt danych zatwierdzone przez zespol.
+2. Startowa wersja `docs/selectors.md`.
+
+##### Etap 1 - Rekonesans zrodla danych (1 dzien)
+1. Sprawdzic czy StalcraftDB udostepnia JSON API:
+   - przeanalizowac requesty sieciowe strony,
+   - sprawdzic paging, limity, parametry zapytan.
+2. Jezeli API istnieje:
+   - spisac endpointy, parametry i przykladowe odpowiedzi.
+3. Jezeli API jest niestabilne:
+   - zdefiniowac strategy fallback do HTML.
+4. Udokumentowac selektory HTML i potencjalne miejsca podatne na zmiany DOM.
+
+**Output etapu:**
+1. Tabela "API vs HTML fallback" z decyzja techniczna.
+2. Uzupełnione `docs/selectors.md` (selektory i mapowanie kolumn).
+
+##### Etap 2 - Implementacja scrapera API-first (1 dzien)
+1. Zaimplementowac klienta HTTP (`requests`) z:
+   - timeout,
+   - retry (backoff),
+   - obsluga bledow i czytelnym logowaniem.
+2. Dodac mapowanie odpowiedzi API do kontraktu rekordu.
+3. Dodac guard clauses:
+   - brak pola w odpowiedzi,
+   - puste rekordy,
+   - niepoprawne typy.
+4. Zwracac stabilny wynik (lista rekordow albo pusta lista, nigdy crash).
+
+**Output etapu:**
+1. Dzialajacy flow API-first.
+2. Logi diagnostyczne dla przypadkow blednych.
+
+##### Etap 3 - Parser HTML fallback (1 dzien)
+1. Zaimplementowac parser tabeli cen (BeautifulSoup/lxml).
+2. Dodac normalizacje wartosci:
+   - cena (float),
+   - wolumen (int),
+   - data (datetime UTC).
+3. Dodac obsluge brakow:
+   - brak tabeli,
+   - zmieniona kolejnosc kolumn,
+   - brakujace komorki.
+4. Utrzymac te same typy wyjsciowe co w API-first.
+
+**Output etapu:**
+1. Spójny fallback HTML.
+2. Jednolity format danych niezaleznie od zrodla.
+
+##### Etap 4 - Przygotowanie pod JS-only / Playwright (0.5-1 dnia)
+1. Dodac interfejs fallback, ktory mozna podmienic na Playwright.
+2. Na MVP zwracac mock z czytelnym oznaczeniem `source`.
+3. Opisac warunek przejscia na Playwright (kiedy aktywujemy ten tryb).
+
+**Output etapu:**
+1. Gotowy punkt rozszerzenia pod renderowanie JS.
+2. Brak blokady projektu na brak Playwright w MVP.
+
+##### Etap 5 - Testy i stabilizacja (1-1.5 dnia)
+1. Napisac testy jednostkowe parsera API.
+2. Napisac testy parsera HTML na fixture (stabilne probki HTML).
+3. Dodac testy regresyjne:
+   - brak tabeli,
+   - brak kolumny,
+   - zly format ceny/dat.
+4. Cel: min. 80% pokrycia dla `ingestion/*`.
+
+**Output etapu:**
+1. Testy uruchamiane lokalnie i w CI.
+2. Raport przypadkow granicznych.
+
+##### Etap 6 - Przekazanie i quality gate (ciagle)
+1. Przygotowac checkliste review i stosowac ja do kazdego PR.
+2. W review sprawdzac:
+   - czy format danych nie zostal zlamany,
+   - czy bledy sa logowane i obslugiwane,
+   - czy testy pokrywaja nowe sciezki.
+3. Raz na sprint robic mini-audyt stabilnosci parsera.
+
+**Output etapu:**
+1. Spójna jakosc kodu i mniej regresji.
+2. Transparentna historia decyzji review.
+
+##### Priorytety Zwidek (kolejnosc bezdyskusyjna)
+1. Stabilnosc danych > szybkosc wdrozenia.
+2. API-first > HTML fallback > mock/Playwright.
+3. Guard clauses i logi > "cichy fail".
+4. Testy regresyjne > nowe funkcje.
+
+##### Gotowa checklista "PR Review by Zwidek"
+1. Czy wejsciowy i wyjsciowy kontrakt danych jest zachowany?
+2. Czy brak `any` i sa typy zwracane?
+3. Czy kazde IO ma obsluge bledu i log?
+4. Czy dodano test dla nowej sciezki i scenariusza bledu?
+5. Czy fallback nie psuje glownego flow API-first?
+6. Czy zmiana nie zwieksza ryzyka duplikatow danych?
+
 ### Luxber (Osoba B) - Backend, Storage, LLM
 #### Zakres odpowiedzialnosci
 1. `storage/*` - modele, repozytorium, operacje DB.
@@ -185,6 +289,111 @@ Wyjscie:
 4) test plan i known issues.
 ```
 
+#### Plan krok po kroku dla Luxber (operacyjny)
+##### Etap 0 - Uzgodnienie interfejsow (0.5 dnia)
+1. Potwierdzic kontrakt wejscia od scrapera (format rekordu ceny).
+2. Potwierdzic kontrakt wyjscia do notifiera (struktura alertu).
+3. Zdefiniowac wersje JSON schema dla analizy patch notes.
+
+**Output etapu:**
+1. Spis interfejsow miedzy modulami A-B-C.
+2. Minimalny dokument `architecture.md` z flow i zaleznosciami.
+
+##### Etap 1 - Storage i modele danych (1 dzien)
+1. Zaimplementowac `storage/models.py`:
+   - `price_history`,
+   - `patch_analysis`,
+   - `alerts`.
+2. Dodac constraints:
+   - indeks po `item_id` i `observed_at`,
+   - unikalnosc snapshotu (hash lub klucz biznesowy).
+3. Zaimplementowac `storage/db.py` (init engine, session factory).
+4. Przygotowac helper inicjalizujacy DB lokalnie.
+
+**Output etapu:**
+1. Dzialajacy schemat SQLite.
+2. Stabilna warstwa inicjalizacji bazy.
+
+##### Etap 2 - Repository i operacje na danych (1 dzien)
+1. Zaimplementowac `storage/repository.py`:
+   - insert historii cen,
+   - odczyt historii 7d,
+   - zapis odczyt patch analysis,
+   - zapis alertow.
+2. Dodac guard clauses i walidacje danych wejsciowych.
+3. Dodac obsluge deduplikacji i idempotencji zapisu.
+4. Dolozyc logi techniczne dla odczytow/zapisow.
+
+**Output etapu:**
+1. Jednolity interfejs data-access dla calej aplikacji.
+2. Brak duplikatow przy ponownym uruchomieniu joba.
+
+##### Etap 3 - Analiza anomalii cenowych (1 dzien)
+1. Zaimplementowac `analysis/price_anomaly.py`.
+2. Policzac:
+   - srednia 7d,
+   - procentowe odchylenie od sredniej,
+   - score okazji (np. 0-100).
+3. Wprowadzic prog alarmowy MVP (np. >=30% ponizej sredniej).
+4. Zwracac gotowy obiekt sygnalu do powiadomien.
+
+**Output etapu:**
+1. Modol sygnalowy gotowy do podpiecia pod Discord.
+2. Czytelny kontrakt obiektu alertu.
+
+##### Etap 4 - Integracja LLM (OpenAI + Ollama) (1-1.5 dnia)
+1. Zaimplementowac `analysis/patch_analyzer.py` z adapterem providerow.
+2. Dodac wspolny interfejs:
+   - `analyze_patch_notes(text: str) -> PatchImpactResult`.
+3. Przygotowac prompt systemowy i user prompt pod JSON-only response.
+4. Dodac walidacje odpowiedzi:
+   - schema validation,
+   - fallback przy niepoprawnym JSON.
+5. Dodac confidence threshold i flage "requires_manual_review".
+
+**Output etapu:**
+1. Powtarzalna analiza buff/nerf/neutral.
+2. Kontrolowany fallback przy bledach modelu.
+
+##### Etap 5 - Orkiestracja i scheduler (1 dzien)
+1. Zaimplementowac `core/scheduler.py`:
+   - job ingestion,
+   - job anomaly scan,
+   - job patch analysis.
+2. Dodac skrypty uruchomieniowe do `scripts/`.
+3. Zapewnic idempotencje wielokrotnego uruchamiania.
+4. Dodac logowanie start/stop/czas trwania jobow.
+
+**Output etapu:**
+1. Dzialajacy pipeline uruchamiany komenda.
+2. Przewidywalny harmonogram z logami operacyjnymi.
+
+##### Etap 6 - Testy backendu i stabilizacja (1 dnia)
+1. Testy dla repository (insert/read/dedupe).
+2. Testy dla anomalii (poprawne liczenie progu i score).
+3. Testy dla patch analyzera (mock odpowiedzi LLM).
+4. Testy bledu:
+   - timeout modelu,
+   - niepoprawny JSON,
+   - brak danych 7d.
+
+**Output etapu:**
+1. Zestaw testow krytycznych sciezek backendu.
+2. Raport ryzyk i ograniczen MVP.
+
+##### Priorytety Luxber (kolejnosc bezdyskusyjna)
+1. Poprawnosc danych i idempotencja > nowe funkcje.
+2. Stabilny kontrakt miedzy modulami > lokalna optymalizacja.
+3. Walidacja odpowiedzi LLM > "szybki sukces bez kontroli".
+4. Testy backendu > refaktor stylistyczny.
+
+##### Gotowa checklista "PR Review by Luxber"
+1. Czy model danych i constraints sa zgodne z kontraktem?
+2. Czy operacje DB sa idempotentne?
+3. Czy analiza ma test dla sciezki pozytywnej i bledu?
+4. Czy integracja LLM ma walidacje schema i fallback?
+5. Czy scheduler nie powoduje duplikatow i race conditions?
+
 ### Mociur (Osoba C) - UI/UX, Integracje, DevEx
 #### Zakres odpowiedzialnosci
 1. `notifications/*` - format i estetyka embedow.
@@ -221,6 +430,94 @@ Wyjscie:
 3) test scenariusza E2E,
 4) runbook i checklista utrzymaniowa.
 ```
+
+#### Plan krok po kroku dla Mociur (operacyjny)
+##### Etap 0 - Uzgodnienie UX i komunikatow (0.5 dnia)
+1. Zdefiniowac szablony komunikatow:
+   - alert okazji cenowej,
+   - alert patch impact.
+2. Uzgodnic ton, poziom szczegolow i kolory embedow.
+3. Uzgodnic minimalny zestaw pol wymaganych w kazdym komunikacie.
+
+**Output etapu:**
+1. Specyfikacja formatu embedow.
+2. Makieta tresci alertow zaakceptowana przez zespol.
+
+##### Etap 1 - Implementacja warstwy powiadomien (1 dzien)
+1. Zaimplementowac `notifications/discord_notifier.py`.
+2. Zaimplementowac `notifications/message_builder.py`:
+   - builder okazji,
+   - builder patch impact.
+3. Dodac mapowanie `severity -> color`.
+4. Dodac bezpieczna obsluge bledow webhooka (timeout/retry/log).
+
+**Output etapu:**
+1. Powtarzalne embedy o stalej strukturze.
+2. Notifier odporny na chwilowe problemy sieciowe.
+
+##### Etap 2 - DevEx i onboarding (0.5-1 dnia)
+1. Przygotowac `.env.example` z opisem kazdej zmiennej.
+2. Przygotowac `README.md`:
+   - instalacja,
+   - uruchomienie,
+   - debug typowych problemow.
+3. Dodac szybki scenariusz "quick start" dla nowej osoby.
+
+**Output etapu:**
+1. Dokumentacja uruchomienia od zera.
+2. Czas onboardingu <=20 minut.
+
+##### Etap 3 - Healthcheck i obserwowalnosc (0.5-1 dnia)
+1. Zaimplementowac `api/health.py` lub skrypt statusu.
+2. Raportowac status:
+   - polaczenie z DB,
+   - status webhooka,
+   - czas ostatniego joba.
+3. Dodac minimalne metryki w logach (liczba alertow, liczba bledow).
+
+**Output etapu:**
+1. Szybka diagnoza "czy system zyje?".
+2. Lepsza utrzymywalnosc produkcyjna.
+
+##### Etap 4 - Integracja end-to-end i UX korekty (1 dzien)
+1. Podpiac notifier do sygnalow od Luxbera.
+2. Przejsc scenariusze:
+   - okazja cenowa,
+   - patch buff/nerf.
+3. Dopracowac czytelnosc embedow:
+   - kolejnosc pol,
+   - procenty,
+   - oznaczenia czasu.
+4. Dodac cooldown/agregacje zeby nie spamowac kanalu.
+
+**Output etapu:**
+1. Stabilne i czytelne alerty produkcyjne.
+2. Mniejsza liczba falszywych/spamowych powiadomien.
+
+##### Etap 5 - Testy integracyjne i runbook (1 dzien)
+1. Przygotowac test scenariusza E2E (scraper -> DB -> analiza -> Discord).
+2. Opisac runbook:
+   - brak danych z ingestii,
+   - bledy LLM,
+   - niedzialajacy webhook.
+3. Dodac checkliste operacyjna po wdrozeniu.
+
+**Output etapu:**
+1. Gotowy plan reakcji na awarie.
+2. Powtarzalny proces utrzymania systemu.
+
+##### Priorytety Mociur (kolejnosc bezdyskusyjna)
+1. Czytelnosc i jakosc alertu > efekty wizualne.
+2. Onboarding i dokumentacja > dodatkowe ficzery UI.
+3. Stabilnosc integracji > szybkie kosmetyczne zmiany.
+4. E2E i runbook > lokalne eksperymenty.
+
+##### Gotowa checklista "PR Review by Mociur"
+1. Czy alert jest zrozumialy dla odbiorcy nietechnicznego?
+2. Czy format embeda jest spójny miedzy typami alertow?
+3. Czy README i `.env.example` sa aktualne po zmianie?
+4. Czy healthcheck i logi pomagaja diagnozowac problem?
+5. Czy zmiana nie zwieksza ryzyka spamu na Discordzie?
 
 ## 7) Kolejnosc realizacji (punkt po punkcie)
 1. Uzgodnic liste itemow monitorowanych i zakres patch notes.
@@ -266,6 +563,43 @@ Wyjscie:
 2. PR workflow: max 300 linii, minimum 1 reviewer (A obowiazkowo).
 3. Definition of Ready: task ma cel, scope, kryteria akceptacji.
 4. Definition of Done: kod + testy + logi + dokumentacja.
+
+## 9.1) Pelny workflow zespolowy (A+B+C)
+### Krok 1 - Planowanie tygodnia (poniedzialek)
+1. Zespol wybiera 3-6 zadan sprintowych o najwyzszym priorytecie.
+2. Kazde zadanie dostaje wlasciciela: A lub B lub C.
+3. Zadania maja kryteria akceptacji i przewidziany reviewer.
+
+### Krok 2 - Implementacja dzienna
+1. Zwidek realizuje data ingestion i rownolegle robi review PR-ow.
+2. Luxber rozwija backend, logike i scheduler na aktualnych danych.
+3. Mociur rozwija warstwe alertow, dokumentacje i testy E2E.
+4. Po kazdym wiekszym tasku autor robi self-check: typy, logi, testy.
+
+### Krok 3 - Integracja miedzy osobami (codziennie po daily)
+1. A przekazuje B aktualny kontrakt danych i ewentualne zmiany parsera.
+2. B przekazuje C kontrakt obiektu alertu i status pipeline.
+3. C raportuje A/B, czy alerty sa poprawne i czytelne.
+
+### Krok 4 - PR i review gate
+1. Autor otwiera PR z opisem: cel, zakres, testy, ryzyka.
+2. Zwidek robi review techniczne (kontrakt, odpornosc, regresje).
+3. Osoba domenowa (B lub C) robi review funkcjonalne.
+4. Merge tylko gdy testy przejda i checklista review jest domknieta.
+
+### Krok 5 - Test end-to-end (co najmniej 2 razy w tygodniu)
+1. Uruchomic scenariusz: scraper -> DB -> analiza -> Discord.
+2. Potwierdzic:
+   - zapis danych,
+   - wykrycie sygnalu,
+   - publikacje embeda.
+3. Zapisac wynik i ewentualne blokery w runbooku.
+
+### Krok 6 - Hardening i zamkniecie sprintu
+1. Domknac bugfixy krytyczne.
+2. Uporzadkowac dokumentacje po zmianach.
+3. Zweryfikowac metryki jakosci (testy, bledy, stabilnosc jobow).
+4. Zrobic retro: co poprawic w kolejnym sprincie.
 
 ## 10) Ryzyka i plan awaryjny
 1. Zmiana struktury strony StalcraftDB -> parser guard clauses + szybkie hotfixy.
