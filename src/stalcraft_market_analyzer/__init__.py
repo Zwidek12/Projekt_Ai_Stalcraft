@@ -1,0 +1,1 @@
+"""Stalcraft Market Analyzer package."""
