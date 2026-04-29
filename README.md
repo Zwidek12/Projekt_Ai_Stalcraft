@@ -45,6 +45,24 @@ python -c "import os; from notifications.message_builder import build_price_oppo
 
 Jeśli wszystko jest OK, na kanale Discord pojawi się embed z testowym alertem.
 
+## Testowa wiadomość na Discord (bez udostępniania `.env`)
+
+Możesz wysłać testowe alerty lokalnie, bez przekazywania komukolwiek pliku `.env`:
+
+- **1) Uzupełnij `.env`** (lokalnie): wklej swój `DISCORD_WEBHOOK_URL`
+- **2) Uruchom przykład integracyjny**:
+
+Windows (PowerShell):
+
+```powershell
+python scripts\send_discord_alert_example.py
+```
+
+Skrypt:
+- buduje 2 przykładowe embedy (okazja cenowa + patch impact),
+- wysyła je webhookiem,
+- loguje wynik wysyłki (`DiscordWebhookResponse`).
+
 ## Instalacja krok po kroku
 
 ### 1) Zależności

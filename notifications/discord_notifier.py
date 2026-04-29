@@ -5,9 +5,12 @@ import logging
 import os
 import time
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Literal, Mapping, Sequence, TypedDict
-from urllib.error import HTTPError, URLError
-from urllib.request import Request, urlopen
+
+import requests
+from requests import Response
+from requests.exceptions import RequestException, Timeout
 
 from notifications.message_builder import DiscordEmbed
 
@@ -61,7 +64,13 @@ class DiscordNotifier:
 
     @classmethod
     def from_env(cls) -> "DiscordNotifier":
+        _load_dotenv_if_present()
         webhook_url = os.environ.get("DISCORD_WEBHOOK_URL", "").strip()
+        if not webhook_url:
+            raise ValueError(
+                "DISCORD_WEBHOOK_URL is required. Set it in the environment or in a .env file "
+                "in the project root (example: DISCORD_WEBHOOK_URL=https://discord.com/api/webhooks/...)."
+            )
         timeout_s = float(os.environ.get("DISCORD_WEBHOOK_TIMEOUT_S", "10"))
         max_retries = int(os.environ.get("DISCORD_WEBHOOK_MAX_RETRIES", "3"))
         retry_backoff_s = float(os.environ.get("DISCORD_WEBHOOK_RETRY_BACKOFF_S", "0.8"))
@@ -116,57 +125,51 @@ class DiscordNotifier:
         for attempt_idx in range(self._config.max_retries + 1):
             attempts = attempt_idx + 1
             try:
-                http_status, body = self._do_request(payload)
-                last_http_status = http_status
+                resp = self._do_request(payload)
+                last_http_status = resp.status_code
 
-                if 200 <= http_status < 300:
+                if 200 <= resp.status_code < 300:
                     logger.info(
                         "Discord webhook sent (%s): http=%s attempts=%s",
                         event,
-                        http_status,
+                        resp.status_code,
                         attempts,
                     )
                     return DiscordWebhookResponse(
                         status="ok",
-                        http_status=http_status,
+                        http_status=resp.status_code,
                         attempts=attempts,
                         error=None,
                     )
 
+                body = _safe_response_text(resp)
                 truncated = _truncate(body, 500)
-                last_error = f"HTTP {http_status}: {truncated}"
+                last_error = f"HTTP {resp.status_code}: {truncated}"
                 logger.warning(
                     "Discord webhook non-2xx (%s): http=%s attempts=%s body=%s meta_keys=%s",
                     event,
-                    http_status,
+                    resp.status_code,
                     attempts,
                     truncated,
                     sorted(meta.keys()),
                 )
 
-                if not _is_retryable_status(http_status):
+                if not _is_retryable_status(resp.status_code):
                     break
 
-            except HTTPError as e:
-                last_http_status = int(getattr(e, "code", 0)) or None
-                body = _read_http_error_body(e)
-                truncated = _truncate(body, 500)
-                last_error = f"HTTPError {last_http_status}: {truncated}"
-                logger.warning(
-                    "Discord webhook HTTPError (%s): http=%s attempts=%s body=%s meta_keys=%s",
-                    event,
-                    last_http_status,
-                    attempts,
-                    truncated,
-                    sorted(meta.keys()),
-                )
-                if last_http_status is not None and not _is_retryable_status(last_http_status):
-                    break
-
-            except (URLError, TimeoutError) as e:
-                last_error = f"{type(e).__name__}: {e}"
+            except Timeout as e:
+                last_error = f"Timeout: {e}"
                 logger.warning(
                     "Discord webhook transport error (%s): attempts=%s err=%s meta_keys=%s",
+                    event,
+                    attempts,
+                    last_error,
+                    sorted(meta.keys()),
+                )
+            except RequestException as e:
+                last_error = f"{type(e).__name__}: {e}"
+                logger.warning(
+                    "Discord webhook request error (%s): attempts=%s err=%s meta_keys=%s",
                     event,
                     attempts,
                     last_error,
@@ -191,22 +194,17 @@ class DiscordNotifier:
             error=last_error,
         )
 
-    def _do_request(self, payload: DiscordWebhookPayload) -> tuple[int, str]:
-        data = json.dumps(payload, ensure_ascii=False).encode("utf-8")
-        req = Request(
+    def _do_request(self, payload: DiscordWebhookPayload) -> Response:
+        data = json.dumps(payload, ensure_ascii=False)
+        return requests.post(
             self._config.webhook_url,
             data=data,
             headers={
                 "Content-Type": "application/json",
                 "User-Agent": "stalcraft-market-analyzer/discord-notifier",
             },
-            method="POST",
+            timeout=self._config.timeout_s,
         )
-        with urlopen(req, timeout=self._config.timeout_s) as resp:
-            status = int(getattr(resp, "status", 0))
-            body_bytes = resp.read()
-            body = body_bytes.decode("utf-8", errors="replace")
-            return status, body
 
     def _compute_backoff(self, attempt_idx: int) -> float:
         # 0 -> base, 1 -> 2x, 2 -> 4x, ...
@@ -218,15 +216,9 @@ def _is_retryable_status(http_status: int) -> bool:
     return http_status in (429, 500, 502, 503, 504)
 
 
-def _read_http_error_body(err: HTTPError) -> str:
+def _safe_response_text(resp: Response) -> str:
     try:
-        raw = err.read()
-    except Exception:
-        return ""
-    if not raw:
-        return ""
-    try:
-        return raw.decode("utf-8", errors="replace")
+        return resp.text
     except Exception:
         return ""
 
@@ -235,4 +227,56 @@ def _truncate(value: str, limit: int) -> str:
     if len(value) <= limit:
         return value
     return value[:limit] + "…"
+
+
+def _load_dotenv_if_present(path: Path | None = None) -> None:
+    """
+    Minimal .env loader (no external deps).
+
+    - Does not override already-set environment variables.
+    - Supports lines like KEY=VALUE (VALUE may be quoted with single/double quotes).
+    - Ignores empty lines and comments starting with '#'.
+    """
+    dotenv_path = path or Path(".env")
+    if not dotenv_path.exists() or not dotenv_path.is_file():
+        return
+
+    try:
+        content = dotenv_path.read_text(encoding="utf-8")
+    except OSError:
+        return
+
+    lines = content.splitlines()
+    i = 0
+    while i < len(lines):
+        line = lines[i].strip()
+        if not line or line.startswith("#"):
+            i += 1
+            continue
+        if "=" not in line:
+            i += 1
+            continue
+
+        key, value = line.split("=", 1)
+        key = key.strip()
+        value = value.strip()
+        if not key:
+            continue
+        if key in os.environ and os.environ.get(key, "").strip():
+            continue
+
+        if len(value) >= 2 and (
+            (value[0] == value[-1] == '"') or (value[0] == value[-1] == "'")
+        ):
+            value = value[1:-1]
+
+        # If a line got split (e.g. "KEY=\rVALUE"), allow a single-line continuation.
+        if not value and i + 1 < len(lines):
+            nxt = lines[i + 1].strip()
+            if nxt and "=" not in nxt and (nxt.startswith("http://") or nxt.startswith("https://")):
+                value = nxt
+                i += 1
+
+        os.environ[key] = value
+        i += 1
 
