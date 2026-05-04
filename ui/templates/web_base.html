@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>{{ title }} • {{ subtitle }}</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@500;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/dev/static/dev_dashboard.css" />
+</head>
+<body>
+  <div class="screen-noise"></div>
+  <header class="app-header">
+    <div class="brand-block">
+      <p class="tag">Zone Operations Console</p>
+      <h1>STALCRAFT Market Analyzer</h1>
+      <p class="subtitle">{{ subtitle }}</p>
+    </div>
+    <div class="header-controls">
+      <nav class="main-nav">
+        <a class="{% if active_nav == 'dashboard' %}active{% endif %}" href="/app">Dashboard</a>
+        <a class="{% if active_nav == 'market' %}active{% endif %}" href="/app/market">Market Feed</a>
+        <a class="{% if active_nav == 'actions' %}active{% endif %}" href="/app/actions">Actions</a>
+        <a href="/dev/api/status" target="_blank" rel="noreferrer">Status API</a>
+      </nav>
+      <button id="themeToggle" class="theme-toggle" type="button" aria-label="Toggle light/dark mode">
+        Toggle Theme
+      </button>
+    </div>
+  </header>
+
+  <main class="page-shell">
+    {% if flash_message %}
+      <div class="flash flash-{{ flash_level }}">{{ flash_message }}</div>
+    {% endif %}
+    {% block page_content %}{% endblock %}
+  </main>
+  <script>
+    (() => {
+      const root = document.body;
+      const toggle = document.getElementById("themeToggle");
+      const key = "stalcraft-theme";
+      const initial = localStorage.getItem(key) || "dark";
+      root.setAttribute("data-theme", initial);
+      if (toggle) {
+        toggle.textContent = initial === "light" ? "Dark Mode" : "Light Mode";
+        toggle.addEventListener("click", () => {
+          const next = root.getAttribute("data-theme") === "light" ? "dark" : "light";
+          root.setAttribute("data-theme", next);
+          localStorage.setItem(key, next);
+          toggle.textContent = next === "light" ? "Dark Mode" : "Light Mode";
+        });
+      }
+    })();
+  </script>
+</body>
+</html>

@@ -1,0 +1,170 @@
+{% extends "web_base.html" %}
+{% block page_content %}
+<section class="hero">
+  <div class="hero-left">
+    <h2>Tactical market overview</h2>
+    <p>Monitor prices, verify pipeline health, and launch test actions from one panel.</p>
+  </div>
+  <div class="hero-right">
+    <span class="hero-chip">Snapshot: {{ stats.last_snapshot_id }}</span>
+    <span class="hero-chip">Updated: {{ updated_at }}</span>
+  </div>
+  {% if hero_image_url %}
+    <img class="hero-art" src="{{ hero_image_url }}" alt="Stalcraft hero art" />
+  {% endif %}
+</section>
+
+<section class="stat-grid">
+  <article class="stat-card">
+    <p>Total records</p>
+    <strong>{{ stats.total_records }}</strong>
+  </article>
+  <article class="stat-card">
+    <p>Unique items</p>
+    <strong>{{ stats.unique_items }}</strong>
+  </article>
+  <article class="stat-card">
+    <p>Average price</p>
+    <strong>{{ "%.2f"|format(stats.avg_price) }} ₽</strong>
+  </article>
+  <article class="stat-card">
+    <p>Sources</p>
+    <strong>{{ stats.sources_summary }}</strong>
+  </article>
+</section>
+
+<section class="panel-grid">
+  <article class="panel">
+    <h3>Price telemetry</h3>
+    <p class="muted">Recent price trend from latest snapshot records.</p>
+    <canvas id="priceChart" class="chart-canvas"></canvas>
+  </article>
+
+  <article class="panel">
+    <h3>System health</h3>
+    <div class="kv">
+      <span>DB</span>
+      <span class="badge badge-{{ health.db_status }}">{{ health.db_status }}</span>
+    </div>
+    <div class="kv">
+      <span>Webhook</span>
+      <span class="badge badge-{{ health.webhook_status }}">{{ health.webhook_status }}</span>
+    </div>
+    <div class="kv">
+      <span>Last ingestion</span>
+      <span>{{ health.last_ingestion_at or "n/a" }}</span>
+    </div>
+    <div class="kv">
+      <span>Last anomaly scan</span>
+      <span>{{ health.last_anomaly_scan_at or "n/a" }}</span>
+    </div>
+  </article>
+
+  <article class="panel">
+    <h3>Highest prices (latest snapshot)</h3>
+    {% if top_expensive %}
+      <ul class="clean-list rarity-list">
+        {% for row in top_expensive %}
+          <li>
+            <span>{{ row.get("item_name", "unknown") }}</span>
+            <span>
+              <span class="badge badge-rarity-{{ row.get('rarity', 'common') }}">{{ row.get("rarity", "common") }}</span>
+              <strong>{{ row.get("price", 0) }} ₽</strong>
+            </span>
+          </li>
+        {% endfor %}
+      </ul>
+    {% else %}
+      <p class="muted">No records yet.</p>
+    {% endif %}
+  </article>
+</section>
+
+<section class="zone-grid">
+  {% for zone in zones %}
+    <article class="zone-card zone-{{ zone.state }}">
+      <p class="zone-name">{{ zone.name }}</p>
+      <p class="zone-state">{{ zone.state }}</p>
+      <p class="zone-detail">{{ zone.detail }}</p>
+    </article>
+  {% endfor %}
+</section>
+
+<section class="panel">
+  <h3>Latest records</h3>
+  {% if latest_records %}
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Item</th>
+            <th>Price</th>
+            <th>Volume</th>
+            <th>Observed</th>
+            <th>Source</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in latest_records %}
+            <tr>
+              <td>{{ row.get("item_name", "unknown") }}</td>
+              <td>{{ row.get("price", 0) }}</td>
+              <td>{{ row.get("volume", 0) }}</td>
+              <td>{{ row.get("observed_at", "n/a") }}</td>
+              <td>{{ row.get("source", "n/a") }}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  {% else %}
+    <p class="muted">No snapshot records available. Run ingestion first.</p>
+  {% endif %}
+</section>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script>
+  (() => {
+    const labels = {{ chart_labels|tojson }};
+    const values = {{ chart_values|tojson }};
+    const canvas = document.getElementById("priceChart");
+    if (!canvas || !labels.length || !values.length) return;
+
+    const context = canvas.getContext("2d");
+    if (!context) return;
+
+    new Chart(context, {
+      type: "line",
+      data: {
+        labels,
+        datasets: [
+          {
+            label: "Price",
+            data: values,
+            borderColor: "#d8983b",
+            backgroundColor: "rgba(216, 152, 59, 0.16)",
+            fill: true,
+            tension: 0.25,
+            pointRadius: 2,
+          },
+        ],
+      },
+      options: {
+        maintainAspectRatio: false,
+        scales: {
+          x: {
+            ticks: { color: "#97a493", maxRotation: 0, autoSkip: true, maxTicksLimit: 8 },
+            grid: { color: "rgba(151, 164, 147, 0.12)" },
+          },
+          y: {
+            ticks: { color: "#97a493" },
+            grid: { color: "rgba(151, 164, 147, 0.12)" },
+          },
+        },
+        plugins: {
+          legend: { labels: { color: "#d9e2d6" } },
+        },
+      },
+    });
+  })();
+</script>
+{% endblock %}

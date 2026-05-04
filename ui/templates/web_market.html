@@ -1,0 +1,87 @@
+{% extends "web_base.html" %}
+{% block page_content %}
+<section class="panel">
+  <h3>Market feed</h3>
+  <p class="muted">Snapshot: {{ snapshot_id }} • Generated at: {{ snapshot_at }}</p>
+  <p class="muted">Showing {{ records_filtered }} of {{ records_total }} records</p>
+</section>
+
+<section class="market-layout">
+  <aside class="panel sticky-filters">
+    <h3>Quick filters</h3>
+    <form method="get" action="/app/market" class="filter-form">
+      <label for="q">Item search</label>
+      <input id="q" name="q" type="text" value="{{ current_query }}" placeholder="item name or id" />
+
+      <label for="source">Source</label>
+      <select name="source" id="source">
+        <option value="">All</option>
+        {% for source in available_sources %}
+          <option value="{{ source }}" {% if current_source == source %}selected{% endif %}>{{ source }}</option>
+        {% endfor %}
+      </select>
+
+      <label for="rarity">Rarity</label>
+      <select name="rarity" id="rarity">
+        <option value="">All</option>
+        {% for rarity in available_rarities %}
+          <option value="{{ rarity }}" {% if current_rarity == rarity %}selected{% endif %}>{{ rarity }}</option>
+        {% endfor %}
+      </select>
+
+      <label for="faction">Faction</label>
+      <select name="faction" id="faction">
+        <option value="">All</option>
+        {% for faction in available_factions %}
+          <option value="{{ faction }}" {% if current_faction == faction %}selected{% endif %}>{{ faction }}</option>
+        {% endfor %}
+      </select>
+
+      <label for="min_price">Min price</label>
+      <input id="min_price" name="min_price" type="number" min="0" step="1" value="{{ current_min_price }}" />
+
+      <div class="filter-actions">
+        <button type="submit">Apply filters</button>
+        <a href="/app/market" class="clear-link">Clear</a>
+      </div>
+    </form>
+  </aside>
+
+  <section class="panel">
+    {% if records %}
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Item ID</th>
+              <th>Item Name</th>
+              <th>Rarity</th>
+              <th>Faction</th>
+              <th>Price</th>
+              <th>Volume</th>
+              <th>Observed At</th>
+              <th>Source</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for row in records %}
+              <tr>
+                <td>{{ row.get("item_id", "n/a") }}</td>
+                <td>{{ row.get("item_name", "n/a") }}</td>
+                <td><span class="badge badge-rarity-{{ row.get('rarity', 'common') }}">{{ row.get("rarity", "common") }}</span></td>
+                <td><span class="badge badge-faction">{{ row.get("faction", "zone-neutral") }}</span></td>
+                <td>{{ row.get("price", 0) }}</td>
+                <td>{{ row.get("volume", 0) }}</td>
+                <td>{{ row.get("observed_at", "n/a") }}</td>
+                <td>{{ row.get("source", "n/a") }}</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    {% else %}
+      <p class="muted">No records for selected filters.</p>
+    {% endif %}
+  </section>
+</section>
+{% endblock %}
