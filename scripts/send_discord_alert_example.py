@@ -1,5 +1,14 @@
+"""
+Przykład ręcznej wysyłki alertów na Discord — ten sam kierunek co MVP repo:
+
+webhook + embedy, builder wiadomości (`notifications/message_builder.py`),
+warstwa wysyłki (`notifications/discord_notifier.py`), oraz spójność operacyjna
+z healthcheckiem (`api/health.py`), runbookiem (`Runbook.md`) i testem E2E
+(`tests/test_e2e_pipeline.py`).
+"""
 from __future__ import annotations
 
+import json
 import logging
 import sys
 from pathlib import Path
@@ -11,6 +20,7 @@ if str(SRC_DIR) not in sys.path:
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
+from api.health import build_health_response
 from notifications.discord_notifier import DiscordNotifier
 from notifications.message_builder import build_patch_impact_embed, build_price_opportunity_embed
 
@@ -49,9 +59,14 @@ def main() -> int:
     resp2 = notifier.send_patch_alert(patch, embeds=[patch_embed])
     logging.info("Patch alert send result: %s", resp2)
 
+    health = build_health_response()
+    logging.info(
+        "Health snapshot (por. Runbook /health): %s",
+        json.dumps(health, ensure_ascii=False),
+    )
+
     return 0 if resp1.status == "ok" and resp2.status == "ok" else 2
 
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

@@ -5,7 +5,7 @@ Narzędzie do zbierania danych z rynku Stalcraft, analizy anomalii cenowych oraz
 ## Quick Start (< 20 minut)
 
 1. **Wymagania**
-   - Python **3.12+** (zalecane)
+   - Python **3.10+** (wymagane: w repo używane są m.in. `@dataclass(..., slots=True)`)
    - (Opcjonalnie) `venv`
    - Discord webhook URL (kanał, na który mają wpadać alerty)
 
@@ -176,6 +176,8 @@ Aktualnie w repo znajdują się m.in.:
   - timeout + retry (backoff),
   - czytelne logi statusów i błędów,
   - przyjmuje **już zbudowane** embedy.
+
+**MVP powiadomień (spójny zestaw):** webhook + embedy, `message_builder`, healthcheck (`api/health.py`), runbook (`Runbook.md`) oraz scenariusz E2E (`tests/test_e2e_pipeline.py`). Lokalny „ręczny” smoke: `python scripts/send_discord_alert_example.py`.
 
 W kolejnych etapach zwykle dochodzą:
 - `scraper/` – pobieranie danych z rynku,
