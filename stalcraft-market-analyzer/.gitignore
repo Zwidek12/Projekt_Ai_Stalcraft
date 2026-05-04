@@ -1,0 +1,13 @@
+# Środowisko wirtualne
+venv/
+env/
+
+# Pliki tymczasowe Pythona
+__pycache__/
+*.pyc
+
+# Baza danych (tworzona lokalnie)
+data/market.db
+
+# Zmienne środowiskowe
+.env
