@@ -1,16 +1,20 @@
 # Stalcraft Market Analyzer
 
-**Wymagania systemowe:**
-- Python 3.10 lub nowszy (wymagane ze względu na nowoczesne adnotacje typów i SQLAlchemy 2.0).
+**Wymagania środowiskowe:**
+- **Python:** Wersja `3.10+` jest ściśle wymagana ze względu na wykorzystanie nowoczesnych adnotacji typów i biblioteki SQLAlchemy 2.0+.
+- **Baza danych:** Projekt używa lokalnej bazy SQLite. Plik `market.db` nie jest wersjonowany (znajduje się w `.gitignore`). Baza zostanie wygenerowana automatycznie w folderze `data/` przy pierwszym uruchomieniu.
 
-## Baza danych
-Projekt używa lokalnej bazy SQLite. Plik `market.db` **nie jest** trzymany w repozytorium. Baza zostanie wygenerowana automatycznie w folderze `data/` przy pierwszym uruchomieniu skryptu inicjalizującego (`db.py`) lub przy pierwszej próbie zapisu.
+## Instalacja
 
-## Kontrakt Danych (Scraper -> Storage)
-Dane ze scrapera są mapowane na model `PriceHistory` w następujący sposób:
+1. Aktywuj środowisko wirtualne.
+2. Zainstaluj pakiety produkcyjne: `pip install -r requirements.txt`
+3. (Opcjonalnie) Zainstaluj pakiety do testów: `pip install -r requirements-dev.txt`
+
+## Kontrakt Danych (Ingestia -> Storage)
+Dane pobierane przez scraper są mapowane na model `PriceHistory` w następujący sposób:
 - `item_id` (str) -> `item_id`
 - `item_name` (str) -> `item_name`
 - `price` (float) -> `price`
 - `volume` (int) -> `volume`
 - `source` (str) -> `source` (np. json_api, html_fallback)
-- **Uwaga:** Pole `observed_at` nie musi być przekazywane przez scraper. Baza danych automatycznie nadaje mu obecny czas w strefie UTC w momencie zapisu.
+*Uwaga: Pole `observed_at` jest nadawane automatycznie w UTC po stronie repozytorium w momencie zapisu.*

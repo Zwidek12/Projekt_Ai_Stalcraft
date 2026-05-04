@@ -26,12 +26,12 @@ def test_get_average_price_7d_no_data(test_session):
 def test_get_average_price_7d_calculates_correctly(test_session):
     now = datetime.now(timezone.utc)
     
-    # Dodajemy poprawne wpisy z ostatnich 7 dni
-    test_session.add(PriceHistory(item_id="test_item", item_name="Test", price=100.0, observed_at=now))
-    test_session.add(PriceHistory(item_id="test_item", item_name="Test", price=200.0, observed_at=now - timedelta(days=2)))
+    # Dodajemy poprawne wpisy z ostatnich 7 dni (dodano wymagane pole source="test")
+    test_session.add(PriceHistory(item_id="test_item", item_name="Test", price=100.0, source="test", observed_at=now))
+    test_session.add(PriceHistory(item_id="test_item", item_name="Test", price=200.0, source="test", observed_at=now - timedelta(days=2)))
     
     # Dodajemy wpis stary (10 dni temu) – ten nie powinien wliczyć się do średniej
-    test_session.add(PriceHistory(item_id="test_item", item_name="Test", price=9000.0, observed_at=now - timedelta(days=10)))
+    test_session.add(PriceHistory(item_id="test_item", item_name="Test", price=9000.0, source="test", observed_at=now - timedelta(days=10)))
     test_session.commit()
     
     # Średnia z 100 i 200 to 150 (ignoruje 9000)
