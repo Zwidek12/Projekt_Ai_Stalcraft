@@ -30,6 +30,6 @@ jobs:
 
     - name: Uruchomienie testów (pytest)
       env:
-        PYTHONPATH: src
+        PYTHONPATH: src/stalcraft_market_analyzer
       run: |
         pytest
