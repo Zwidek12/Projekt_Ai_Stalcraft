@@ -45,6 +45,33 @@ python -c "import os; from notifications.message_builder import build_price_oppo
 
 Jeśli wszystko jest OK, na kanale Discord pojawi się embed z testowym alertem.
 
+## Developer Web UI (Stalcraft-style)
+
+Projekt zawiera lekki panel developerski do testowania pipeline i diagnostyki:
+
+- dashboard health (`db_status`, `webhook_status`, znaczniki ostatnich jobow),
+- podglad ostatniego snapshotu z `data/raw`,
+- szybkie akcje: mark ingestion, mark anomaly, send Discord test alert.
+- wykres telemetryczny cen i sekcje statusu operacyjnego (zone cards).
+
+Uruchomienie:
+
+```bash
+python scripts/run_dev_ui.py --host 127.0.0.1 --port 8080 --reload
+```
+
+Windows (PowerShell, Python 3.10 wymuszony automatycznie):
+
+```powershell
+.\scripts\run_dev_ui.ps1 -HostName 127.0.0.1 -Port 8080 -Reload
+```
+
+Nastepnie otworz:
+
+```text
+http://127.0.0.1:8080/app
+```
+
 ## Testowa wiadomość na Discord (bez udostępniania `.env`)
 
 Możesz wysłać testowe alerty lokalnie, bez przekazywania komukolwiek pliku `.env`:

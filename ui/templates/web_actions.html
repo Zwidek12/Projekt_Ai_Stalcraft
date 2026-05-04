@@ -1,0 +1,40 @@
+{% extends "web_base.html" %}
+{% block page_content %}
+<section class="panel-grid">
+  <article class="panel">
+    <h3>Operational actions</h3>
+    <p class="muted">Use these controls to simulate pipeline events and send test notifications.</p>
+    <div class="stack-buttons">
+      <form method="post" action="/dev/actions/mark-ingestion">
+        <button type="submit">Mark ingestion as successful</button>
+      </form>
+      <form method="post" action="/dev/actions/mark-anomaly">
+        <button type="submit">Mark anomaly scan as successful</button>
+      </form>
+      <form method="post" action="/dev/actions/send-test-alert">
+        <button type="submit" class="accent">Send Discord test alert</button>
+      </form>
+    </div>
+  </article>
+
+  <article class="panel">
+    <h3>Current health state</h3>
+    <div class="kv">
+      <span>DB</span>
+      <span class="badge badge-{{ health.db_status }}">{{ health.db_status }}</span>
+    </div>
+    <div class="kv">
+      <span>Webhook</span>
+      <span class="badge badge-{{ health.webhook_status }}">{{ health.webhook_status }}</span>
+    </div>
+    <div class="kv">
+      <span>Last ingestion</span>
+      <span>{{ health.last_ingestion_at or "n/a" }}</span>
+    </div>
+    <div class="kv">
+      <span>Last anomaly scan</span>
+      <span>{{ health.last_anomaly_scan_at or "n/a" }}</span>
+    </div>
+  </article>
+</section>
+{% endblock %}

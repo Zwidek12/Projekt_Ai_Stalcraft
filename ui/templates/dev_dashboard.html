@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>{{ title }}</title>
+  <link rel="stylesheet" href="/dev/static/dev_dashboard.css" />
+</head>
+<body>
+  <div class="overlay"></div>
+  <main class="shell">
+    <header class="topbar">
+      <div>
+        <p class="eyebrow">Developer Tool</p>
+        <h1>{{ title }}</h1>
+        <p class="muted">Last refresh: {{ updated_at }}</p>
+      </div>
+      <a class="ghost-btn" href="/dev/api/status">Raw Status JSON</a>
+    </header>
+
+    <section class="grid">
+      <article class="card">
+        <h2>System Health</h2>
+        <div class="stats-list">
+          <div class="stat-row">
+            <span>DB Status</span>
+            <strong class="badge badge-{{ health.db_status }}">{{ health.db_status }}</strong>
+          </div>
+          <div class="stat-row">
+            <span>Webhook Status</span>
+            <strong class="badge badge-{{ health.webhook_status }}">{{ health.webhook_status }}</strong>
+          </div>
+          <div class="stat-row">
+            <span>Last Ingestion</span>
+            <strong>{{ health.last_ingestion_at or "n/a" }}</strong>
+          </div>
+          <div class="stat-row">
+            <span>Last Anomaly Scan</span>
+            <strong>{{ health.last_anomaly_scan_at or "n/a" }}</strong>
+          </div>
+        </div>
+      </article>
+
+      <article class="card">
+        <h2>Market Snapshot</h2>
+        <div class="stats-list">
+          <div class="stat-row">
+            <span>Snapshot ID</span>
+            <strong>{{ stats.last_snapshot_id }}</strong>
+          </div>
+          <div class="stat-row">
+            <span>Generated At</span>
+            <strong>{{ stats.last_snapshot_at }}</strong>
+          </div>
+          <div class="stat-row">
+            <span>Total Records</span>
+            <strong>{{ stats.total_records }}</strong>
+          </div>
+          <div class="stat-row">
+            <span>Sources</span>
+            <strong>{{ stats.sources_summary }}</strong>
+          </div>
+        </div>
+      </article>
+    </section>
+
+    <section class="card actions">
+      <h2>Quick Actions</h2>
+      <div class="action-buttons">
+        <form method="post" action="/dev/actions/mark-ingestion">
+          <button type="submit" class="action-btn">Mark Ingestion Success</button>
+        </form>
+        <form method="post" action="/dev/actions/mark-anomaly">
+          <button type="submit" class="action-btn">Mark Anomaly Scan Success</button>
+        </form>
+        <form method="post" action="/dev/actions/send-test-alert">
+          <button type="submit" class="action-btn accent">Send Discord Test Alert</button>
+        </form>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>Latest Records (max 12)</h2>
+      {% if latest_records %}
+        <div class="table-wrapper">
+          <table>
+            <thead>
+              <tr>
+                <th>Item</th>
+                <th>Price</th>
+                <th>Volume</th>
+                <th>Observed At</th>
+                <th>Source</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for row in latest_records %}
+              <tr>
+                <td>{{ row.get("item_name", "unknown") }}</td>
+                <td>{{ row.get("price", 0) }}</td>
+                <td>{{ row.get("volume", 0) }}</td>
+                <td>{{ row.get("observed_at", "n/a") }}</td>
+                <td>{{ row.get("source", "n/a") }}</td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      {% else %}
+        <p class="muted">No snapshot data yet. Run ingestion first.</p>
+      {% endif %}
+    </section>
+  </main>
+</body>
+</html>
