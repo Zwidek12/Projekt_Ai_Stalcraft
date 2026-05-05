@@ -243,7 +243,11 @@ body[data-theme="light"] .theme-toggle {
 }
 
 .stat-card strong {
-  font-size: 1.2rem;
+  font-size: clamp(1.02rem, 1.8vw, 1.25rem);
+  line-height: 1.1;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.01em;
+  overflow-wrap: anywhere;
 }
 
 .stat-card:hover {
@@ -344,8 +348,13 @@ h3 {
 
 .chart-canvas {
   width: 100%;
-  height: 260px;
+  height: 240px;
+  max-height: 240px;
   display: block;
+}
+
+canvas {
+  max-width: 100%;
 }
 
 .stats-list {
@@ -448,6 +457,20 @@ th, td {
   text-align: left;
   padding: 10px 8px;
   border-bottom: 1px solid rgba(216, 152, 59, 0.14);
+}
+
+td, th, strong {
+  word-break: break-word;
+}
+
+/* Prevent long text from blowing the grid layout */
+.stat-card p,
+.stat-card strong {
+  max-width: 100%;
+}
+
+.stat-card strong {
+  display: block;
 }
 
 tbody tr {

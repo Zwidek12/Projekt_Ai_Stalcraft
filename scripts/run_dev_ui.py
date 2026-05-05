@@ -21,11 +21,22 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> int:
     args = parse_args()
+    reload_excludes: list[str] | None = None
+    if args.reload:
+        reload_excludes = [
+            "data/*",
+            "data/**",
+            "*.db",
+            "**/__pycache__/**",
+            "**/*.pyc",
+        ]
     uvicorn.run(
         "api.dev_ui:app",
         host=args.host,
         port=args.port,
         reload=args.reload,
+        # Avoid reload loops when ingestion writes snapshots into data/raw.
+        reload_excludes=reload_excludes,
     )
     return 0
 

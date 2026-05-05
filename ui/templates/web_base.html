@@ -54,5 +54,27 @@
       }
     })();
   </script>
+  <script>
+    (() => {
+      const key = "stalcraft-scroll:" + location.pathname + location.search;
+      const saved = sessionStorage.getItem(key);
+      if (saved) {
+        const y = Number(saved);
+        if (Number.isFinite(y)) {
+          requestAnimationFrame(() => window.scrollTo(0, y));
+        }
+      }
+
+      let ticking = false;
+      window.addEventListener("scroll", () => {
+        if (ticking) return;
+        ticking = true;
+        requestAnimationFrame(() => {
+          sessionStorage.setItem(key, String(window.scrollY));
+          ticking = false;
+        });
+      }, { passive: true });
+    })();
+  </script>
 </body>
 </html>
