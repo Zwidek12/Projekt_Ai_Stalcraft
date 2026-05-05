@@ -25,7 +25,7 @@
   </article>
   <article class="stat-card">
     <p>Average price</p>
-    <strong>{{ "%.2f"|format(stats.avg_price) }} ₽</strong>
+    <strong>{{ "{:,.0f}".format(stats.avg_price).replace(",", " ") }} ₽</strong>
   </article>
   <article class="stat-card">
     <p>Sources</p>
@@ -69,7 +69,7 @@
             <span>{{ row.get("item_name", "unknown") }}</span>
             <span>
               <span class="badge badge-rarity-{{ row.get('rarity', 'common') }}">{{ row.get("rarity", "common") }}</span>
-              <strong>{{ row.get("price", 0) }} ₽</strong>
+              <strong>{{ "{:,.0f}".format(row.get("price", 0)|float).replace(",", " ") }} ₽</strong>
             </span>
           </li>
         {% endfor %}
@@ -149,19 +149,42 @@
         ],
       },
       options: {
+        responsive: true,
         maintainAspectRatio: false,
+        animation: false,
         scales: {
           x: {
             ticks: { color: "#97a493", maxRotation: 0, autoSkip: true, maxTicksLimit: 8 },
             grid: { color: "rgba(151, 164, 147, 0.12)" },
           },
           y: {
-            ticks: { color: "#97a493" },
+            ticks: {
+              color: "#97a493",
+              callback: (value) => {
+                try {
+                  return new Intl.NumberFormat("pl-PL", { notation: "compact" }).format(value);
+                } catch (e) {
+                  return value;
+                }
+              }
+            },
             grid: { color: "rgba(151, 164, 147, 0.12)" },
           },
         },
         plugins: {
           legend: { labels: { color: "#d9e2d6" } },
+          tooltip: {
+            callbacks: {
+              label: (ctx) => {
+                const v = ctx.parsed?.y ?? 0;
+                try {
+                  return "Price: " + new Intl.NumberFormat("pl-PL").format(v) + " ₽";
+                } catch (e) {
+                  return "Price: " + v + " ₽";
+                }
+              }
+            }
+          }
         },
       },
     });

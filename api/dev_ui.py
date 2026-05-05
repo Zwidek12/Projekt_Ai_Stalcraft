@@ -16,6 +16,8 @@ from fastapi.templating import Jinja2Templates
 from api.health import build_health_response, record_anomaly_scan, record_ingestion
 from notifications.discord_notifier import DiscordNotifier
 from notifications.message_builder import build_price_opportunity_embed
+from stalcraft_market_analyzer.core.config import load_config
+from stalcraft_market_analyzer.storage.db import create_database, db_ping
 
 APP_ROOT = Path(__file__).resolve().parents[1]
 TEMPLATE_DIR = APP_ROOT / "ui" / "templates"
@@ -69,7 +71,9 @@ def dev_compat_redirect() -> RedirectResponse:
 
 @app.get("/app")
 def app_dashboard(request: Request) -> object:
-    health = build_health_response()
+    app_cfg = load_config(project_root=APP_ROOT)
+    db = create_database(app_cfg.database_url)
+    health = build_health_response(db_check=lambda: db_ping(db))
     snapshot = _load_latest_snapshot()
     stats = _build_stats(snapshot=snapshot)
     latest_records = sorted(
@@ -188,7 +192,9 @@ def app_market(request: Request) -> object:
 
 @app.get("/app/actions")
 def app_actions(request: Request) -> object:
-    health = build_health_response()
+    app_cfg = load_config(project_root=APP_ROOT)
+    db = create_database(app_cfg.database_url)
+    health = build_health_response(db_check=lambda: db_ping(db))
     return templates.TemplateResponse(
         request=request,
         name="web_actions.html",
@@ -206,7 +212,9 @@ def app_actions(request: Request) -> object:
 
 @app.get("/dev/api/status")
 def dev_status_api() -> JSONResponse:
-    health = build_health_response()
+    app_cfg = load_config(project_root=APP_ROOT)
+    db = create_database(app_cfg.database_url)
+    health = build_health_response(db_check=lambda: db_ping(db))
     snapshot = _load_latest_snapshot()
     stats = _build_stats(snapshot=snapshot)
     return JSONResponse(

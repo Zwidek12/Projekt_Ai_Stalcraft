@@ -54,6 +54,51 @@ def parse_api_history(item_id: str, payload: dict[str, Any]) -> list[MarketPrice
     return records
 
 
+def parse_stalcraftdb_item_name(item_payload: dict[str, Any], *, item_id: str) -> str:
+    name = item_payload.get("name")
+    if isinstance(name, dict):
+        lines = name.get("lines")
+        if isinstance(lines, dict):
+            en_value = lines.get("en")
+            if isinstance(en_value, str) and en_value.strip():
+                return en_value.strip()
+    return f"item_{item_id}"
+
+
+def parse_stalcraftdb_auction_history(
+    *,
+    item_id: str,
+    item_name: str,
+    history_payload: dict[str, Any],
+) -> list[MarketPriceRecord]:
+    prices = history_payload.get("prices")
+    if not isinstance(prices, list):
+        logger.warning("Missing or invalid auction prices list for %s", item_id)
+        return []
+
+    records: list[MarketPriceRecord] = []
+    for row in prices:
+        if not isinstance(row, dict):
+            continue
+        price = _safe_float(row.get("price"))
+        amount = _safe_int(row.get("amount"))
+        time_value = row.get("time")
+        if price is None or amount is None:
+            continue
+        observed_at = parse_datetime(time_value)
+        records.append(
+            MarketPriceRecord(
+                item_id=item_id,
+                item_name=item_name,
+                price=price,
+                volume=amount,
+                observed_at=observed_at,
+                source="stalcraftdb_auction",
+            )
+        )
+    return records
+
+
 def parse_html_market_table(item_id: str, html: str) -> list[MarketPriceRecord]:
     soup = BeautifulSoup(html, "lxml")
     title_node = soup.select_one("h1.item-title")

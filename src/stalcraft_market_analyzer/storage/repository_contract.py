@@ -27,6 +27,9 @@ class PriceHistoryRepository(Protocol):
     def save_ingestion_batch(self, batch: IngestionBatch) -> int:
         """Persist the batch and return number of inserted rows."""
 
+    def get_average_price_7d(self, *, item_id: str, now: datetime | None = None) -> float | None:
+        """Return average price over last 7 days or None if no data."""
+
 
 def build_ingestion_batch(snapshot_id: str, records: list[MarketPriceRecord]) -> IngestionBatch:
     payload: list[RepositoryPriceRecord] = []
