@@ -5,3 +5,7 @@ pytest
 fastapi
 uvicorn
 jinja2
+sqlalchemy
+pydantic
+tenacity
+httpx
