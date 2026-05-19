@@ -1,0 +1,56 @@
+{% extends "user_base.html" %}
+{% block content %}
+<section class="hero-user">
+  <div>
+    <p class="eyebrow">Read-only market intelligence</p>
+    <h1>Hot artifacts and market signals</h1>
+    <p class="lead">Public view reads prepared data from SQLite. Dev actions, Discord and secrets stay outside this web.</p>
+  </div>
+  <div class="hero-card">
+    <span>Updated</span>
+    <strong>{{ updated_at }}</strong>
+  </div>
+</section>
+
+<section class="grid-two">
+  <article class="panel">
+    <h2>Latest update</h2>
+    {% if latest_update %}
+      <p><span class="rarity rarity-{{ latest_update.update_type }}">{{ latest_update.update_type }}</span></p>
+      <h3>{{ latest_update.title }}</h3>
+      <p class="muted">{{ latest_update.published_at_display }}</p>
+      {% if latest_update.summary %}
+        <p>{{ latest_update.summary }}</p>
+      {% endif %}
+      {% if latest_update.link_url %}
+        <a class="button" href="{{ latest_update.link_url }}" target="_blank" rel="noreferrer">Open notes</a>
+      {% else %}
+        <a class="button" href="/updates">Open updates</a>
+      {% endif %}
+    {% else %}
+      <p class="muted">No update/balance notes yet.</p>
+      <a class="button" href="/updates">Open updates</a>
+    {% endif %}
+  </article>
+
+  <article class="panel">
+    <h2>Top deals</h2>
+    {% if using_fallback_deals %}
+      <p class="warn">No pink/red/gold artifact deals yet, showing fallback market deals.</p>
+    {% endif %}
+    {% if hot_deals %}
+      <ul class="deal-list">
+        {% for deal in hot_deals %}
+          <li>
+            <a href="/artifacts/{{ deal.item_id }}">{{ deal.item_name }}</a>
+            <span class="rarity rarity-{{ deal.rarity_class }}">{{ deal.rarity_display }}</span>
+            <strong>{{ "%.1f"|format(deal.deviation_pct) }}%</strong>
+          </li>
+        {% endfor %}
+      </ul>
+    {% else %}
+      <p class="muted">No deals yet. Run daily review after ingestion.</p>
+    {% endif %}
+  </article>
+</section>
+{% endblock %}

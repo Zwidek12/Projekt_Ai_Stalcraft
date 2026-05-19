@@ -11,6 +11,7 @@ import requests
 from requests.adapters import HTTPAdapter
 from urllib3.util import Retry
 
+from .exbo_api import ExboApiConfig, ExboAuctionClient
 from .parsers import (
     MarketPriceRecord,
     parse_api_history,
@@ -29,6 +30,13 @@ class ScraperConfig:
     timeout_seconds: int = 15
     max_retries: int = 3
     backoff_factor: float = 0.5
+    exbo_api_base_url: str = "https://eapi.stalcraft.net"
+    exbo_region: str = "EU"
+    exbo_access_token: str = ""
+    exbo_client_id: str = ""
+    exbo_client_secret: str = ""
+    exbo_history_limit: int = 20
+    exbo_lots_limit: int = 20
 
 
 class StalcraftPriceScraper:
@@ -40,6 +48,21 @@ class StalcraftPriceScraper:
         self._timeout_seconds = config.timeout_seconds
         self._session = self._build_session(config=config)
         self._api_origin = self._derive_api_origin(self._base_url)
+        self._is_stalcraftdb_host = self._is_stalcraftdb_net_host(self._base_url)
+        self._exbo = ExboAuctionClient(
+            config=ExboApiConfig(
+                api_base_url=config.exbo_api_base_url,
+                region=config.exbo_region,
+                access_token=config.exbo_access_token,
+                client_id=config.exbo_client_id,
+                client_secret=config.exbo_client_secret,
+                timeout_seconds=config.timeout_seconds,
+                max_retries=config.max_retries,
+                backoff_factor=config.backoff_factor,
+                history_limit=config.exbo_history_limit,
+                lots_limit=config.exbo_lots_limit,
+            )
+        )
 
     def fetch_prices(self, item_ids: list[str]) -> list[MarketPriceRecord]:
         output: list[MarketPriceRecord] = []
@@ -47,6 +70,15 @@ class StalcraftPriceScraper:
             resolved_id = self._resolve_item_id(item_id)
             if resolved_id != item_id:
                 logger.info("Resolved item token '%s' -> '%s'", item_id, resolved_id)
+
+            item_name = self._try_fetch_stalcraftdb_item_name(item_id=resolved_id)
+            exbo_records = self._exbo.fetch_market_records(
+                item_id=resolved_id,
+                item_name=item_name or f"item_{resolved_id}",
+            )
+            if exbo_records:
+                output.extend(exbo_records)
+                continue
 
             api_payload = self._try_fetch_api(item_id=item_id)
             if api_payload is not None:
@@ -73,6 +105,11 @@ class StalcraftPriceScraper:
         return output
 
     def _try_fetch_api(self, item_id: str) -> dict[str, Any] | None:
+        if self._is_stalcraftdb_host:
+            # StalcraftDB uses a different API surface; the generic /api/market/... probe only adds noisy warnings.
+            logger.debug("Skipping generic JSON API probe for StalcraftDB host (item_id=%s)", item_id)
+            return None
+
         endpoint = f"{self._base_url}/api/market/items/{item_id}/prices"
         try:
             response = self._session.get(endpoint, timeout=self._timeout_seconds)
@@ -90,6 +127,11 @@ class StalcraftPriceScraper:
             return None
 
     def _try_fetch_html(self, item_id: str) -> str | None:
+        if self._is_stalcraftdb_host:
+            # StalcraftDB pages are not used by this scraper path; avoid 404 warnings for non-existent routes.
+            logger.debug("Skipping legacy HTML market page fetch for StalcraftDB host (item_id=%s)", item_id)
+            return None
+
         page_url = f"{self._base_url}/market/items/{item_id}"
         try:
             response = self._session.get(page_url, timeout=self._timeout_seconds)
@@ -104,15 +146,7 @@ class StalcraftPriceScraper:
             return []
 
         try:
-            item_resp = self._session.get(
-                f"{self._api_origin}/api/items/{item_id}?region={self._region}",
-                timeout=self._timeout_seconds,
-            )
-            item_resp.raise_for_status()
-            item_payload = item_resp.json()
-            if not isinstance(item_payload, dict):
-                return []
-            item_name = parse_stalcraftdb_item_name(item_payload, item_id=item_id)
+            item_name = self._try_fetch_stalcraftdb_item_name(item_id=item_id) or f"item_{item_id}"
 
             hist_resp = self._session.get(
                 f"{self._api_origin}/api/items/{item_id}/auction-history?region={self._region}&page=0",
@@ -134,6 +168,24 @@ class StalcraftPriceScraper:
         except ValueError as error:
             logger.warning("StalcraftDB JSON decode failed for %s: %s", item_id, error)
             return []
+
+    def _try_fetch_stalcraftdb_item_name(self, *, item_id: str) -> str | None:
+        if not self._api_origin:
+            return None
+        try:
+            item_resp = self._session.get(
+                f"{self._api_origin}/api/items/{item_id}?region={self._region}",
+                timeout=self._timeout_seconds,
+            )
+            item_resp.raise_for_status()
+            item_payload = item_resp.json()
+            if not isinstance(item_payload, dict):
+                return None
+            return parse_stalcraftdb_item_name(item_payload, item_id=item_id)
+        except requests.RequestException:
+            return None
+        except ValueError:
+            return None
 
     def _resolve_item_id(self, token: str) -> str:
         """
@@ -190,6 +242,11 @@ class StalcraftPriceScraper:
         if "stalcraftdb.net" in parsed.netloc:
             return f"{parsed.scheme}://{parsed.netloc}"
         return None
+
+    @staticmethod
+    def _is_stalcraftdb_net_host(base_url: str) -> bool:
+        parsed = urlparse(base_url)
+        return bool(parsed.netloc) and ("stalcraftdb.net" in parsed.netloc)
 
     def _build_session(self, config: ScraperConfig) -> requests.Session:
         retry = Retry(

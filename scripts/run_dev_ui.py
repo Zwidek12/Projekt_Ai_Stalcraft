@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import argparse
+import inspect
+import logging
 import sys
 from pathlib import Path
 
@@ -24,23 +26,27 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> int:
     args = parse_args()
-    reload_excludes: list[str] | None = None
-    if args.reload:
-        reload_excludes = [
+    run_kw: dict[str, object] = {
+        "app": "api.dev_ui:app",
+        "host": args.host,
+        "port": args.port,
+        "reload": args.reload,
+    }
+    if args.reload and "reload_excludes" in inspect.signature(uvicorn.run).parameters:
+        # Avoid reload loops when ingestion writes snapshots into data/raw.
+        run_kw["reload_excludes"] = [
             "data/*",
             "data/**",
             "*.db",
             "**/__pycache__/**",
             "**/*.pyc",
         ]
-    uvicorn.run(
-        "api.dev_ui:app",
-        host=args.host,
-        port=args.port,
-        reload=args.reload,
-        # Avoid reload loops when ingestion writes snapshots into data/raw.
-        reload_excludes=reload_excludes,
-    )
+    elif args.reload:
+        logging.getLogger(__name__).warning(
+            "This uvicorn has no reload_excludes; file writes under data/ may trigger extra reloads. "
+            "Upgrade uvicorn or use --reload only when debugging templates."
+        )
+    uvicorn.run(**run_kw)
     return 0
 
 

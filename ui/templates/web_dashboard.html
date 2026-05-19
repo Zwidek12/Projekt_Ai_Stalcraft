@@ -31,6 +31,69 @@
     <p>Sources</p>
     <strong>{{ stats.sources_summary }}</strong>
   </article>
+  <article class="stat-card">
+    <p>Raw snapshot files</p>
+    <strong>{{ raw_snapshot_files }}</strong>
+  </article>
+  <article class="stat-card">
+    <p>Price alerts today (UTC)</p>
+    <strong>{{ alerts_today }}</strong>
+  </article>
+</section>
+
+<section class="panel-grid ops-panels">
+  <article class="panel">
+    <h3>Recent job runs</h3>
+    <p class="muted">Persisted locally under <code>data/dev_ops_state.json</code> (dev only).</p>
+    {% set job_order = ['ingestion', 'pipeline', 'anomaly_scan', 'anomaly_scan_discord'] %}
+    {% if ops_jobs %}
+      <div class="job-run-list">
+        {% for key in job_order %}
+          {% if key in ops_jobs %}
+            {% set j = ops_jobs[key] %}
+            <div class="job-run">
+              <span class="badge badge-{{ j.status }}">{{ j.status }}</span>
+              <strong>{{ key }}</strong>
+              <span class="muted">{{ j.finished_at }} · {{ j.duration_ms }} ms</span>
+              <p class="job-msg">{{ j.message }}</p>
+            </div>
+          {% endif %}
+        {% endfor %}
+      </div>
+    {% else %}
+      <p class="muted">No job history yet — run actions from the Actions tab.</p>
+    {% endif %}
+  </article>
+
+  <article class="panel">
+    <h3>Recent alerts</h3>
+    {% if recent_alerts %}
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Time (UTC)</th>
+              <th>Type</th>
+              <th>Item</th>
+              <th>Fingerprint</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for row in recent_alerts %}
+              <tr>
+                <td>{{ row.created_at }}</td>
+                <td>{{ row.alert_type }}</td>
+                <td>{{ row.item_id }}</td>
+                <td class="mono truncate">{{ row.fingerprint }}</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    {% else %}
+      <p class="muted">No rows in <code>alerts</code> yet.</p>
+    {% endif %}
+  </article>
 </section>
 
 <section class="panel-grid">

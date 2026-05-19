@@ -1,0 +1,48 @@
+{% extends "user_base.html" %}
+{% block content %}
+<section class="page-head">
+  <div>
+    <p class="eyebrow">Artifacts only</p>
+    <h1>Hot Deals</h1>
+    <p class="lead">Pink, red and gold artifacts sorted by strongest price gap.</p>
+  </div>
+  <form class="filters" method="get" action="/deals">
+    <label>
+      Rarity
+      <select name="rarity">
+        <option value="">All hot rarities</option>
+        {% for rarity in available_rarities %}
+          <option value="{{ rarity }}" {% if rarity == current_rarity %}selected{% endif %}>{{ rarity }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <button type="submit">Filter</button>
+  </form>
+</section>
+
+{% if deals %}
+  <div class="cards">
+    {% for deal in deals %}
+      <article class="deal-card rarity-border-{{ deal.rarity_class }}">
+        <div class="card-top">
+          <span class="rarity rarity-{{ deal.rarity_class }}">{{ deal.rarity_display }}</span>
+          <strong>{{ "%.1f"|format(deal.deviation_pct) }}%</strong>
+        </div>
+        <h2><a href="/artifacts/{{ deal.item_id }}">{{ deal.item_name }}</a></h2>
+        <div class="metrics">
+          <span>Now <strong>{{ "{:,.0f}".format(deal.current_price).replace(",", " ") }} ₽</strong></span>
+          <span>Avg 1d <strong>{{ "{:,.0f}".format(deal.avg_price_1d).replace(",", " ") }} ₽</strong></span>
+          <span>Avg 7d <strong>{{ "{:,.0f}".format(deal.avg_price_7d).replace(",", " ") }} ₽</strong></span>
+        </div>
+        {% if deal.external_url %}
+          <a class="external" href="{{ deal.external_url }}" target="_blank" rel="noreferrer">Open StalcraftDB</a>
+        {% endif %}
+      </article>
+    {% endfor %}
+  </div>
+{% else %}
+  <article class="panel">
+    <p class="muted">No active hot artifact deals yet. Refresh catalog, ingest market data, then run daily review.</p>
+  </article>
+{% endif %}
+{% endblock %}

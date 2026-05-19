@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>{{ title }} • Stalcraft Market</title>
+  <link rel="stylesheet" href="/static/user_web.css" />
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="/">Stalcraft Market</a>
+    <nav>
+      <a class="{% if active_nav == 'home' %}active{% endif %}" href="/">Home</a>
+      <a class="{% if active_nav == 'deals' %}active{% endif %}" href="/deals">Hot Deals</a>
+      <a class="{% if active_nav == 'artifacts' %}active{% endif %}" href="/artifacts">Artifacts</a>
+      <a class="{% if active_nav == 'updates' %}active{% endif %}" href="/updates">Updates</a>
+    </nav>
+  </header>
+  <main class="shell">
+    {% block content %}{% endblock %}
+  </main>
+</body>
+</html>

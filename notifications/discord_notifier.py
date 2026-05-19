@@ -17,6 +17,8 @@ from notifications.message_builder import DiscordEmbed
 
 logger = logging.getLogger(__name__)
 
+_DOTENV_BOOTSTRAPPED = False
+
 
 DiscordWebhookStatus = Literal["ok", "failed"]
 
@@ -64,7 +66,7 @@ class DiscordNotifier:
 
     @classmethod
     def from_env(cls) -> "DiscordNotifier":
-        _load_dotenv_if_present()
+        _bootstrap_dotenv()
         webhook_url = os.environ.get("DISCORD_WEBHOOK_URL", "").strip()
         if not webhook_url:
             raise ValueError(
@@ -227,6 +229,42 @@ def _truncate(value: str, limit: int) -> str:
     if len(value) <= limit:
         return value
     return value[:limit] + "…"
+
+
+def _bootstrap_dotenv() -> None:
+    """
+    Ensure local `.env` is loaded exactly once per process.
+
+    Parsing `.env` on every notifier init makes CLI workflows feel like they "hang"
+    during first network import + env bootstrap.
+    """
+    global _DOTENV_BOOTSTRAPPED
+    if _DOTENV_BOOTSTRAPPED:
+        return
+
+    repo_root = Path(__file__).resolve().parents[1]
+    candidates = [
+        repo_root / ".env",
+        Path(".env"),
+    ]
+
+    loaded_any = False
+    try:
+        from dotenv import load_dotenv  # type: ignore[import-not-found]
+
+        for candidate in candidates:
+            if candidate.exists() and candidate.is_file():
+                load_dotenv(dotenv_path=candidate, override=False)
+                loaded_any = True
+    except Exception:
+        loaded_any = False
+
+    # Fallback path if python-dotenv isn't installed: minimal parser.
+    if not loaded_any:
+        for candidate in candidates:
+            _load_dotenv_if_present(candidate)
+
+    _DOTENV_BOOTSTRAPPED = True
 
 
 def _load_dotenv_if_present(path: Path | None = None) -> None:

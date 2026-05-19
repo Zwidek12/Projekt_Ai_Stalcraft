@@ -46,19 +46,62 @@ catch {
 Write-Host "Installing requirements for dev UI..."
 & py $resolvedTag -m pip install -r requirements.txt | Out-Host
 
-$reloadArg = ""
-if ($Reload.IsPresent) {
-    $reloadArg = "--reload"
+function Test-PortFree {
+    param(
+        [string]$BindHost,
+        [int]$BindPort
+    )
+    try {
+        $ip = [System.Net.IPAddress]::Parse($BindHost)
+    }
+    catch {
+        # Fallback: if host is not an IP literal, we don't preflight.
+        return $true
+    }
+    try {
+        $listener = [System.Net.Sockets.TcpListener]::new($ip, $BindPort)
+        $listener.Start()
+        $listener.Stop()
+        return $true
+    }
+    catch {
+        return $false
+    }
 }
 
-$url = "http://$HostName`:$Port/dev"
-Write-Host "Opening browser: $url"
-Start-Process $url
-
-Write-Host "Starting Dev UI server..."
-if ($reloadArg) {
-    & py $resolvedTag scripts/run_dev_ui.py --host $HostName --port $Port --reload
+$originalPort = $Port
+for ($i = 0; $i -lt 10; $i++) {
+    if (Test-PortFree -BindHost $HostName -BindPort $Port) {
+        break
+    }
+    $Port = $Port + 1
 }
-else {
-    & py $resolvedTag scripts/run_dev_ui.py --host $HostName --port $Port
+if ($Port -ne $originalPort) {
+    Write-Host "Port $originalPort is busy; using $Port instead."
+}
+
+$appUrl = "http://${HostName}:${Port}/app"
+
+# Open the browser *after* the server has had time to bind (previously we opened it first — connection refused).
+Write-Host "Will open browser in ~2s: $appUrl"
+$openJob = Start-Job -ScriptBlock {
+    param([string]$targetUrl)
+    Start-Sleep -Seconds 2
+    Start-Process $targetUrl
+} -ArgumentList $appUrl
+
+Write-Host "Starting Dev UI server (Ctrl+C to stop)..."
+try {
+    if ($Reload.IsPresent) {
+        & py $resolvedTag scripts/run_dev_ui.py --host $HostName --port $Port --reload
+    }
+    else {
+        & py $resolvedTag scripts/run_dev_ui.py --host $HostName --port $Port
+    }
+}
+finally {
+    if ($openJob -and $openJob.State -in @("Running", "NotStarted")) {
+        Stop-Job -Job $openJob -ErrorAction SilentlyContinue
+    }
+    Remove-Job -Job $openJob -Force -ErrorAction SilentlyContinue
 }

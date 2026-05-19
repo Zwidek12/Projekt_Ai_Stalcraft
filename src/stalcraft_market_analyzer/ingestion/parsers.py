@@ -18,6 +18,7 @@ class MarketPriceRecord:
     volume: int
     observed_at: datetime
     source: str
+    rarity: str = "unknown"
 
 
 def parse_api_history(item_id: str, payload: dict[str, Any]) -> list[MarketPriceRecord]:
@@ -83,6 +84,7 @@ def parse_stalcraftdb_auction_history(
         price = _safe_float(row.get("price"))
         amount = _safe_int(row.get("amount"))
         time_value = row.get("time")
+        rarity = _rarity_from_additional(row.get("additional"))
         if price is None or amount is None:
             continue
         observed_at = parse_datetime(time_value)
@@ -94,6 +96,74 @@ def parse_stalcraftdb_auction_history(
                 volume=amount,
                 observed_at=observed_at,
                 source="stalcraftdb_auction",
+                rarity=rarity,
+            )
+        )
+    return records
+
+
+def parse_exbo_auction_history(
+    *,
+    item_id: str,
+    item_name: str,
+    history_payload: dict[str, Any],
+) -> list[MarketPriceRecord]:
+    prices = history_payload.get("prices")
+    if not isinstance(prices, list):
+        logger.warning("Missing or invalid EXBO auction prices list for %s", item_id)
+        return []
+
+    records: list[MarketPriceRecord] = []
+    for row in prices:
+        if not isinstance(row, dict):
+            continue
+        price = _safe_float(row.get("price"))
+        amount = _safe_int(row.get("amount"))
+        if price is None or amount is None:
+            continue
+        records.append(
+            MarketPriceRecord(
+                item_id=item_id,
+                item_name=item_name,
+                price=price,
+                volume=amount,
+                observed_at=parse_datetime(row.get("time")),
+                source="exbo_auction_history",
+                rarity=_rarity_from_additional(row.get("additional")),
+            )
+        )
+    return records
+
+
+def parse_exbo_active_lots(
+    *,
+    item_id: str,
+    item_name: str,
+    lots_payload: dict[str, Any],
+    observed_at: datetime,
+) -> list[MarketPriceRecord]:
+    lots = lots_payload.get("lots")
+    if not isinstance(lots, list):
+        logger.warning("Missing or invalid EXBO auction lots list for %s", item_id)
+        return []
+
+    records: list[MarketPriceRecord] = []
+    for row in lots:
+        if not isinstance(row, dict):
+            continue
+        price = _lot_market_price(row)
+        amount = _safe_int(row.get("amount"))
+        if price is None or amount is None:
+            continue
+        records.append(
+            MarketPriceRecord(
+                item_id=item_id,
+                item_name=item_name,
+                price=price,
+                volume=amount,
+                observed_at=observed_at,
+                source="exbo_auction_lot",
+                rarity=_rarity_from_additional(row.get("additional")),
             )
         )
     return records
@@ -161,3 +231,32 @@ def _safe_int(value: Any) -> int | None:
         return int(value)
     except (TypeError, ValueError):
         return None
+
+
+def _lot_market_price(row: dict[str, Any]) -> float | None:
+    for key in ("buyoutPrice", "currentPrice", "startPrice"):
+        price = _safe_float(row.get(key))
+        if price is not None and price > 0:
+            return price
+    return None
+
+
+def _rarity_from_additional(value: Any) -> str:
+    if not isinstance(value, dict):
+        return "unknown"
+    qlt = value.get("qlt")
+    if qlt is None:
+        return "unknown"
+    try:
+        qlt_int = int(qlt)
+    except (TypeError, ValueError):
+        return "unknown"
+    return {
+        0: "common",
+        1: "uncommon",
+        2: "special",
+        3: "rare",
+        4: "exclusive",
+        5: "legendary",
+        6: "unique",
+    }.get(qlt_int, "unknown")
