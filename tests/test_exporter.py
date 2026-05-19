@@ -13,15 +13,17 @@ def _sample_records() -> list[MarketPriceRecord]:
     return [
         MarketPriceRecord("ak-103", "AK-103", 12000.0, 5, now, "json_api"),
         MarketPriceRecord("armor", "Armor", 10000.0, 3, now, "html_table"),
+        MarketPriceRecord("artifact", "Artifact", 9000.0, 1, now, "exbo_auction_lot", "exclusive"),
         MarketPriceRecord("scope", "Scope", 0.0, 0, now, "mock_js_fallback"),
     ]
 
 
 def test_build_quality_report_counts_by_source() -> None:
     report = build_quality_report(_sample_records())
-    assert report.total_records == 3
+    assert report.total_records == 4
     assert report.json_api_records == 1
     assert report.html_table_records == 1
+    assert report.exbo_auction_records == 1
     assert report.mock_js_fallback_records == 1
 
 
@@ -30,4 +32,5 @@ def test_write_raw_snapshot_creates_json_file(tmp_path: Path) -> None:
     assert result.output_path.exists()
     content = json.loads(result.output_path.read_text(encoding="utf-8"))
     assert content["snapshot_id"] == result.snapshot_id
-    assert len(content["records"]) == 3
+    assert len(content["records"]) == 4
+    assert content["records"][2]["rarity"] == "exclusive"

@@ -17,6 +17,7 @@ class RawMarketRecord(TypedDict):
     volume: int
     observed_at: str
     source: str
+    rarity: str
 
 
 @dataclass(frozen=True)
@@ -24,6 +25,7 @@ class DataQualityReport:
     total_records: int
     json_api_records: int
     html_table_records: int
+    exbo_auction_records: int
     mock_js_fallback_records: int
 
 
@@ -41,6 +43,7 @@ def to_raw_market_record(record: MarketPriceRecord) -> RawMarketRecord:
         volume=record.volume,
         observed_at=record.observed_at.isoformat(),
         source=record.source,
+        rarity=record.rarity,
     )
 
 
@@ -48,6 +51,8 @@ def build_quality_report(records: list[MarketPriceRecord]) -> DataQualityReport:
     source_counts: dict[str, int] = {
         "json_api": 0,
         "html_table": 0,
+        "exbo_auction_history": 0,
+        "exbo_auction_lot": 0,
         "mock_js_fallback": 0,
     }
     for record in records:
@@ -58,6 +63,7 @@ def build_quality_report(records: list[MarketPriceRecord]) -> DataQualityReport:
         total_records=len(records),
         json_api_records=source_counts["json_api"],
         html_table_records=source_counts["html_table"],
+        exbo_auction_records=source_counts["exbo_auction_history"] + source_counts["exbo_auction_lot"],
         mock_js_fallback_records=source_counts["mock_js_fallback"],
     )
 

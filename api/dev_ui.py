@@ -2,30 +2,37 @@ from __future__ import annotations
 
 import json
 import logging
+import base64
+import os
+import secrets
+import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import TypedDict
+from types import SimpleNamespace
+from typing import Any, TypedDict
 from urllib.parse import quote
 
 from fastapi import FastAPI, Request
-from fastapi.responses import JSONResponse, RedirectResponse
+from fastapi.responses import JSONResponse, PlainTextResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
+from api.analysis_jobs import run_price_anomaly_scan_job
 from api.health import build_health_response, record_anomaly_scan, record_ingestion
+from api import ops_state
 from notifications.discord_notifier import DiscordNotifier
 from notifications.message_builder import build_price_opportunity_embed
 from stalcraft_market_analyzer.core.config import load_config
-from stalcraft_market_analyzer.storage.db import create_database, db_ping
+from stalcraft_market_analyzer.core.pipeline import ingest_items, run_market_pipeline
+from stalcraft_market_analyzer.storage.db import create_database, db_ping, init_schema
+from stalcraft_market_analyzer.storage.repository import SqlAlchemyRepository
 
 APP_ROOT = Path(__file__).resolve().parents[1]
 TEMPLATE_DIR = APP_ROOT / "ui" / "templates"
 STATIC_DIR = APP_ROOT / "ui" / "static"
 RAW_DATA_DIR = APP_ROOT / "data" / "raw"
-HERO_IMAGE_PATH = Path(
-    r"C:\Users\Muzeum\.cursor\projects\c-Users-Muzeum-Desktop-projekt-pawel-mociek\assets\c__Users_Muzeum_AppData_Roaming_Cursor_User_workspaceStorage_87cc70eebfd48b9c1940e355dbd4ecba_images_image-b79a2e3c-c5bb-4a4f-bc6c-d99f76ca03a0.png"
-)
+OPS_STATE_FILE = ops_state.ops_state_path(APP_ROOT)
 logger = logging.getLogger(__name__)
 
 
@@ -52,11 +59,103 @@ class ZoneStatus:
     detail: str
 
 
+def _utc_day_start(now: datetime | None = None) -> datetime:
+    dt = (now or datetime.now(timezone.utc)).astimezone(timezone.utc)
+    return dt.replace(hour=0, minute=0, second=0, microsecond=0)
+
+
+def _raw_snapshot_file_count() -> int:
+    if not RAW_DATA_DIR.is_dir():
+        return 0
+    return len(list(RAW_DATA_DIR.glob("market_snapshot_*.json")))
+
+
+def _format_recent_alerts(repo: SqlAlchemyRepository, *, limit: int = 8) -> list[dict[str, object]]:
+    rows = repo.fetch_recent_alerts(limit=limit)
+    formatted: list[dict[str, object]] = []
+    for row in rows:
+        created = row["created_at"]
+        if isinstance(created, datetime):
+            ts = created.astimezone(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+        else:
+            ts = str(created)
+        formatted.append(
+            {
+                "created_at": ts,
+                "alert_type": row["alert_type"],
+                "fingerprint": row["fingerprint"],
+                "item_id": row.get("item_id") or "",
+            }
+        )
+    return formatted
+
+
+def _form_int(raw: object, default: int) -> int:
+    try:
+        return int(str(raw).strip())
+    except (TypeError, ValueError):
+        return default
+
+
+def _form_float(raw: object, default: float) -> float:
+    try:
+        return float(str(raw).strip())
+    except (TypeError, ValueError):
+        return default
+
+
+def _form_bool(raw: object) -> bool:
+    return str(raw or "").strip().lower() in ("1", "on", "true", "yes")
+
+
+def _dev_ui_token() -> str:
+    load_config(project_root=APP_ROOT)
+    return os.environ.get("DEV_UI_TOKEN", "").strip()
+
+
+def _is_basic_auth_valid(*, request: Request, token: str) -> bool:
+    header = request.headers.get("authorization", "")
+    if not header.lower().startswith("basic "):
+        return False
+    try:
+        decoded = base64.b64decode(header.split(" ", 1)[1]).decode("utf-8")
+    except (ValueError, UnicodeDecodeError):
+        return False
+    _username, sep, password = decoded.partition(":")
+    if not sep:
+        return False
+    return secrets.compare_digest(password, token)
+
+
+def _load_ops_jobs() -> dict[str, Any]:
+    state = ops_state.load_ops_state(OPS_STATE_FILE)
+    jobs = state.get("jobs")
+    return jobs if isinstance(jobs, dict) else {}
+
+
 app = FastAPI(title="Stalcraft Market Web Console", version="0.2.0")
 app.mount("/dev/static", StaticFiles(directory=str(STATIC_DIR)), name="dev-static")
-if HERO_IMAGE_PATH.exists():
-    app.mount("/hero-assets", StaticFiles(directory=str(HERO_IMAGE_PATH.parent)), name="hero-assets")
 templates = Jinja2Templates(directory=str(TEMPLATE_DIR))
+
+
+@app.middleware("http")
+async def dev_ui_auth_middleware(request: Request, call_next):  # type: ignore[no-untyped-def]
+    token = _dev_ui_token()
+    if not token:
+        return await call_next(request)
+
+    path = request.url.path
+    if path.startswith("/dev/static"):
+        return await call_next(request)
+
+    if _is_basic_auth_valid(request=request, token=token):
+        return await call_next(request)
+
+    return PlainTextResponse(
+        "Dev UI authentication required.",
+        status_code=401,
+        headers={"WWW-Authenticate": 'Basic realm="Stalcraft Dev UI"'},
+    )
 
 
 @app.get("/")
@@ -73,6 +172,8 @@ def dev_compat_redirect() -> RedirectResponse:
 def app_dashboard(request: Request) -> object:
     app_cfg = load_config(project_root=APP_ROOT)
     db = create_database(app_cfg.database_url)
+    init_schema(db)
+    repo = SqlAlchemyRepository(db=db)
     health = build_health_response(db_check=lambda: db_ping(db))
     snapshot = _load_latest_snapshot()
     stats = _build_stats(snapshot=snapshot)
@@ -90,6 +191,11 @@ def app_dashboard(request: Request) -> object:
     latest_records_decorated = [_decorate_record(row) for row in latest_records]
     chart_payload = _build_price_chart(snapshot["records"])
     zones = _build_zone_statuses(health=health, stats=stats)
+    day_start = _utc_day_start()
+    alerts_today = repo.count_alerts_since(since=day_start, alert_type="price_anomaly")
+    raw_files = _raw_snapshot_file_count()
+    recent_alert_rows = _format_recent_alerts(repo, limit=8)
+    ops_jobs = _load_ops_jobs()
     return templates.TemplateResponse(
         request=request,
         name="web_dashboard.html",
@@ -106,6 +212,10 @@ def app_dashboard(request: Request) -> object:
             "zones": zones,
             "hero_image_url": _hero_image_url(),
             "updated_at": datetime.now(timezone.utc).isoformat(),
+            "raw_snapshot_files": raw_files,
+            "alerts_today": alerts_today,
+            "recent_alerts": recent_alert_rows,
+            "ops_jobs": ops_jobs,
             "flash_message": request.query_params.get("msg", ""),
             "flash_level": request.query_params.get("level", "ok"),
         },
@@ -194,7 +304,10 @@ def app_market(request: Request) -> object:
 def app_actions(request: Request) -> object:
     app_cfg = load_config(project_root=APP_ROOT)
     db = create_database(app_cfg.database_url)
+    init_schema(db)
+    repo = SqlAlchemyRepository(db=db)
     health = build_health_response(db_check=lambda: db_ping(db))
+    day_start = _utc_day_start()
     return templates.TemplateResponse(
         request=request,
         name="web_actions.html",
@@ -204,6 +317,10 @@ def app_actions(request: Request) -> object:
             "active_nav": "actions",
             "health": health,
             "hero_image_url": _hero_image_url(),
+            "raw_snapshot_files": _raw_snapshot_file_count(),
+            "alerts_today": repo.count_alerts_since(since=day_start, alert_type="price_anomaly"),
+            "recent_alerts": _format_recent_alerts(repo, limit=10),
+            "ops_jobs": _load_ops_jobs(),
             "flash_message": request.query_params.get("msg", ""),
             "flash_level": request.query_params.get("level", "ok"),
         },
@@ -214,9 +331,12 @@ def app_actions(request: Request) -> object:
 def dev_status_api() -> JSONResponse:
     app_cfg = load_config(project_root=APP_ROOT)
     db = create_database(app_cfg.database_url)
+    init_schema(db)
+    repo = SqlAlchemyRepository(db=db)
     health = build_health_response(db_check=lambda: db_ping(db))
     snapshot = _load_latest_snapshot()
     stats = _build_stats(snapshot=snapshot)
+    day_start = _utc_day_start()
     return JSONResponse(
         {
             "health": health,
@@ -227,6 +347,13 @@ def dev_status_api() -> JSONResponse:
                 "last_snapshot_at": stats.last_snapshot_at,
                 "unique_items": stats.unique_items,
                 "avg_price": stats.avg_price,
+            },
+            "operations": {
+                "raw_snapshot_files": _raw_snapshot_file_count(),
+                "price_anomaly_alerts_today": repo.count_alerts_since(
+                    since=day_start, alert_type="price_anomaly"
+                ),
+                "jobs": _load_ops_jobs(),
             },
         }
     )
@@ -248,6 +375,93 @@ def mark_anomaly() -> RedirectResponse:
         url=f"/app/actions?level=ok&msg={quote('Anomaly scan timestamp updated.')}",
         status_code=303,
     )
+
+
+@app.post("/dev/actions/run-price-anomalies")
+def run_price_anomalies_scan() -> RedirectResponse:
+    t0 = time.perf_counter()
+    try:
+        app_cfg = load_config(project_root=APP_ROOT)
+        db = create_database(app_cfg.database_url)
+        init_schema(db)
+        repo = SqlAlchemyRepository(db=db)
+
+        result = run_price_anomaly_scan_job(repo=repo, send_discord=False)
+        record_anomaly_scan()
+
+        msg = (
+            f"Anomaly scan: items={result.get('scanned_items')} signals={result.get('signals_found')} "
+            f"inserted={result.get('alerts_inserted')} deduped={result.get('alerts_deduped')}"
+        )
+        ops_state.record_job_run(
+            path=OPS_STATE_FILE,
+            job_key="anomaly_scan",
+            status="ok",
+            message=msg,
+            duration_ms=(time.perf_counter() - t0) * 1000.0,
+            detail={k: result.get(k) for k in result},
+        )
+        return RedirectResponse(url=f"/app/actions?level=ok&msg={quote(msg)}", status_code=303)
+    except Exception as error:
+        logger.warning("Price anomaly scan failed: %s", error)
+        ops_state.record_job_run(
+            path=OPS_STATE_FILE,
+            job_key="anomaly_scan",
+            status="error",
+            message=str(error),
+            duration_ms=(time.perf_counter() - t0) * 1000.0,
+            detail={},
+        )
+        return RedirectResponse(
+            url=f"/app/actions?level=error&msg={quote('Price anomaly scan failed. Check logs.')}",
+            status_code=303,
+        )
+
+
+@app.post("/dev/actions/run-price-anomalies-discord")
+def run_price_anomalies_scan_discord() -> RedirectResponse:
+    t0 = time.perf_counter()
+    try:
+        app_cfg = load_config(project_root=APP_ROOT)
+        db = create_database(app_cfg.database_url)
+        init_schema(db)
+        repo = SqlAlchemyRepository(db=db)
+
+        result = run_price_anomaly_scan_job(repo=repo, send_discord=True)
+        record_anomaly_scan()
+
+        level = "ok"
+        if int(result.get("discord_failed", 0) or 0) > 0:
+            level = "error"
+
+        msg = (
+            f"Anomaly scan+Discord: items={result.get('scanned_items')} signals={result.get('signals_found')} "
+            f"inserted={result.get('alerts_inserted')} deduped={result.get('alerts_deduped')} "
+            f"sent={result.get('discord_sent')} failed={result.get('discord_failed')}"
+        )
+        ops_state.record_job_run(
+            path=OPS_STATE_FILE,
+            job_key="anomaly_scan_discord",
+            status="ok" if level == "ok" else "error",
+            message=msg,
+            duration_ms=(time.perf_counter() - t0) * 1000.0,
+            detail={k: result.get(k) for k in result},
+        )
+        return RedirectResponse(url=f"/app/actions?level={level}&msg={quote(msg)}", status_code=303)
+    except Exception as error:
+        logger.warning("Price anomaly scan (discord) failed: %s", error)
+        ops_state.record_job_run(
+            path=OPS_STATE_FILE,
+            job_key="anomaly_scan_discord",
+            status="error",
+            message=str(error),
+            duration_ms=(time.perf_counter() - t0) * 1000.0,
+            detail={},
+        )
+        return RedirectResponse(
+            url=f"/app/actions?level=error&msg={quote('Price anomaly scan failed. Check logs.')}",
+            status_code=303,
+        )
 
 
 @app.post("/dev/actions/send-test-alert")
@@ -275,6 +489,160 @@ def send_test_alert() -> RedirectResponse:
         logger.warning("Dev UI test alert failed: %s", error)
         return RedirectResponse(
             url=f"/app/actions?level=error&msg={quote('Discord test alert failed. Check logs and env.')}",
+            status_code=303,
+        )
+
+
+@app.post("/dev/actions/run-ingestion")
+async def run_ingestion_action(request: Request) -> RedirectResponse:
+    t0 = time.perf_counter()
+    form = await request.form()
+    items = str(form.get("items", "")).strip()
+    if not items:
+        ops_state.record_job_run(
+            path=OPS_STATE_FILE,
+            job_key="ingestion",
+            status="error",
+            message="Missing item ids",
+            duration_ms=(time.perf_counter() - t0) * 1000.0,
+            detail={},
+        )
+        return RedirectResponse(
+            url=f"/app/actions?level=error&msg={quote('Ingestion: provide at least one item id.')}",
+            status_code=303,
+        )
+
+    timeout_seconds = max(3, _form_int(form.get("timeout_seconds"), 15))
+    base_url = str(form.get("base_url") or "").strip()
+    region = str(form.get("region") or "").strip()
+
+    try:
+        rc = ingest_items(
+            project_root=APP_ROOT,
+            items_csv=items,
+            timeout_seconds=timeout_seconds,
+            base_url=base_url,
+            region=region,
+        )
+        duration_ms = (time.perf_counter() - t0) * 1000.0
+        if rc != 0:
+            msg = f"Ingestion exited with code {rc}."
+            ops_state.record_job_run(
+                path=OPS_STATE_FILE,
+                job_key="ingestion",
+                status="error",
+                message=msg,
+                duration_ms=duration_ms,
+                detail={"exit_code": rc, "items": items},
+            )
+            return RedirectResponse(url=f"/app/actions?level=error&msg={quote(msg)}", status_code=303)
+
+        record_ingestion()
+        msg = "Ingestion completed and DB updated."
+        ops_state.record_job_run(
+            path=OPS_STATE_FILE,
+            job_key="ingestion",
+            status="ok",
+            message=msg,
+            duration_ms=duration_ms,
+            detail={"items": items},
+        )
+        return RedirectResponse(url=f"/app/actions?level=ok&msg={quote(msg)}", status_code=303)
+    except Exception as error:
+        logger.warning("Dev UI ingestion failed: %s", error)
+        ops_state.record_job_run(
+            path=OPS_STATE_FILE,
+            job_key="ingestion",
+            status="error",
+            message=str(error),
+            duration_ms=(time.perf_counter() - t0) * 1000.0,
+            detail={},
+        )
+        return RedirectResponse(
+            url=f"/app/actions?level=error&msg={quote('Ingestion failed. See server logs.')}",
+            status_code=303,
+        )
+
+
+@app.post("/dev/actions/run-pipeline")
+async def run_pipeline_action(request: Request) -> RedirectResponse:
+    t0 = time.perf_counter()
+    form = await request.form()
+    items = str(form.get("items", "")).strip()
+    if not items:
+        ops_state.record_job_run(
+            path=OPS_STATE_FILE,
+            job_key="pipeline",
+            status="error",
+            message="Missing item ids",
+            duration_ms=(time.perf_counter() - t0) * 1000.0,
+            detail={},
+        )
+        return RedirectResponse(
+            url=f"/app/actions?level=error&msg={quote('Pipeline: provide at least one item id.')}",
+            status_code=303,
+        )
+
+    args = SimpleNamespace(
+        items=items,
+        timeout_seconds=max(3, _form_int(form.get("timeout_seconds"), 15)),
+        base_url=str(form.get("base_url") or "").strip(),
+        region=str(form.get("region") or "").strip(),
+        recent_hours=max(1, _form_int(form.get("recent_hours"), 48)),
+        baseline_days=max(1, _form_int(form.get("baseline_days"), 7)),
+        min_samples=max(3, _form_int(form.get("min_samples"), 6)),
+        deal_pct=_form_float(form.get("deal_pct"), -35.0),
+        spike_pct=_form_float(form.get("spike_pct"), 60.0),
+        send_discord=_form_bool(form.get("send_discord")),
+        force_discord_notify=_form_bool(form.get("force_discord_notify")),
+        patch_version=str(form.get("patch_version") or "").strip(),
+        patch_notes_file=str(form.get("patch_notes_file") or "").strip(),
+        patch_notes=str(form.get("patch_notes") or ""),
+        send_patch_discord=_form_bool(form.get("send_patch_discord")),
+        discord_test=_form_bool(form.get("discord_test")),
+    )
+
+    try:
+        rc = run_market_pipeline(project_root=APP_ROOT, args=args)
+        duration_ms = (time.perf_counter() - t0) * 1000.0
+        if rc != 0:
+            msg = f"Pipeline finished with exit code {rc}."
+            ops_state.record_job_run(
+                path=OPS_STATE_FILE,
+                job_key="pipeline",
+                status="error",
+                message=msg,
+                duration_ms=duration_ms,
+                detail={"exit_code": rc, "items": items},
+            )
+            return RedirectResponse(url=f"/app/actions?level=error&msg={quote(msg)}", status_code=303)
+
+        msg = "Pipeline OK: ingest + anomaly scan completed."
+        ops_state.record_job_run(
+            path=OPS_STATE_FILE,
+            job_key="pipeline",
+            status="ok",
+            message=msg,
+            duration_ms=duration_ms,
+            detail={
+                "items": items,
+                "send_discord": bool(args.send_discord),
+                "force_discord_notify": bool(args.force_discord_notify),
+            },
+        )
+        return RedirectResponse(url=f"/app/actions?level=ok&msg={quote(msg)}", status_code=303)
+    except Exception as error:
+        logger.warning("Dev UI pipeline failed: %s", error)
+        ops_state.record_job_run(
+            path=OPS_STATE_FILE,
+            job_key="pipeline",
+            status="error",
+            message=str(error),
+            duration_ms=(time.perf_counter() - t0) * 1000.0,
+            detail={},
+        )
+        return RedirectResponse(
+            url=f"/app/actions?level=error&msg={quote('Pipeline failed. See server logs.')}",
             status_code=303,
         )
 
@@ -397,9 +765,10 @@ def _faction_from_source(source: str) -> str:
 
 
 def _hero_image_url() -> str:
-    if not HERO_IMAGE_PATH.exists():
-        return ""
-    return f"/hero-assets/{HERO_IMAGE_PATH.name}"
+    for candidate in sorted(STATIC_DIR.glob("hero*")):
+        if candidate.suffix.lower() in {".png", ".jpg", ".jpeg", ".gif", ".webp"}:
+            return f"/dev/static/{candidate.name}"
+    return ""
 
 
 def _build_price_chart(records: list[dict[str, object]]) -> dict[str, list[object]]:

@@ -63,3 +63,44 @@ def test_scraper_uses_mock_fallback_when_no_sources() -> None:
 
     assert len(records) == 1
     assert records[0].source == "mock_js_fallback"
+
+
+def test_scraper_stalcraftdb_skips_generic_api_and_html_probes() -> None:
+    scraper = StalcraftPriceScraper(config=ScraperConfig(base_url="https://stalcraftdb.net/eu", region="eu"))
+
+    item_response = Mock()
+    item_response.raise_for_status.return_value = None
+    item_response.json.return_value = {
+        "name": {"lines": {"en": "AK-103"}},
+    }
+
+    hist_response = Mock()
+    hist_response.raise_for_status.return_value = None
+    hist_response.json.return_value = {
+        "prices": [
+            {
+                "price": 11000,
+                "amount": 6,
+                "time": "2026-04-28T18:00:00Z",
+            }
+        ]
+    }
+
+    calls: list[str] = []
+
+    def _mocked_get(url: str, *args: object, **kwargs: object) -> Mock:
+        calls.append(url)
+        if "/auction-history" in url:
+            return hist_response
+        if "/api/items/v7ar" in url and "region=eu" in url:
+            return item_response
+        raise AssertionError(f"Unexpected URL in test: {url}")
+
+    with patch.object(scraper._session, "get", side_effect=_mocked_get):
+        records = scraper.fetch_prices(["v7ar"])
+
+    assert len(records) == 1
+    assert records[0].source == "stalcraftdb_auction"
+
+    assert not any("/api/market/" in u for u in calls)
+    assert not any("/market/items/" in u for u in calls)

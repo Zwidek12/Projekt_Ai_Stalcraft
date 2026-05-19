@@ -4,8 +4,11 @@ lxml
 pytest
 fastapi
 uvicorn
+python-multipart
 jinja2
 sqlalchemy
 pydantic
 tenacity
 httpx
+python-dotenv
+schedule

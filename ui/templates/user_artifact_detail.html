@@ -1,0 +1,72 @@
+{% extends "user_base.html" %}
+{% block content %}
+<section class="page-head">
+  <div>
+    <p class="eyebrow">Artifact detail</p>
+    <h1>{{ item.item_name if item else deal.item_name }}</h1>
+    <p class="lead">
+      {% if item %}
+        <span class="rarity rarity-{{ item.rarity_class }}">{{ item.rarity_display }}</span>
+        {{ item.category }}
+      {% endif %}
+    </p>
+  </div>
+  {% if item and item.external_url %}
+    <a class="button" href="{{ item.external_url }}" target="_blank" rel="noreferrer">Open StalcraftDB</a>
+  {% endif %}
+</section>
+
+<section class="grid-two">
+  <article class="panel">
+    <h2>Current signal</h2>
+    {% if deal %}
+      <div class="big-price">{{ "{:,.0f}".format(deal.current_price).replace(",", " ") }} ₽</div>
+      <div class="metrics stacked">
+        <span>Rarity <strong><span class="rarity rarity-{{ deal.rarity_class }}">{{ deal.rarity_display }}</span></strong></span>
+        <span>Deviation <strong>{{ "%.1f"|format(deal.deviation_pct) }}%</strong></span>
+        <span>Avg 1d <strong>{{ "{:,.0f}".format(deal.avg_price_1d).replace(",", " ") }} ₽</strong></span>
+        <span>Avg 7d <strong>{{ "{:,.0f}".format(deal.avg_price_7d).replace(",", " ") }} ₽</strong></span>
+      </div>
+    {% else %}
+      <p class="muted">No active deal saved for this item.</p>
+    {% endif %}
+  </article>
+
+  <article class="panel">
+    <h2>1 day average</h2>
+    {% if avg_1d > 0 %}
+      <div class="big-price">{{ "{:,.0f}".format(avg_1d).replace(",", " ") }} ₽</div>
+    {% else %}
+      <p class="muted">No price history from last 24h.</p>
+    {% endif %}
+  </article>
+</section>
+
+<section class="panel">
+  <h2>Price history (last 24h)</h2>
+  {% if history %}
+    <table>
+      <thead>
+        <tr>
+          <th>Observed</th>
+          <th>Rarity</th>
+          <th>Price</th>
+          <th>Source</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in history %}
+          <tr>
+            <td>{{ row.observed_at }}</td>
+            <td><span class="rarity rarity-{{ row.rarity_class }}">{{ row.rarity_display }}</span></td>
+            <td>{{ "{:,.0f}".format(row.price).replace(",", " ") }} ₽</td>
+            <td>{{ row.source }}</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% else %}
+    <p class="muted">No recent rows for this item yet.</p>
+  {% endif %}
+</section>
+{% endblock %}

@@ -286,6 +286,95 @@ h3 {
   gap: 16px;
 }
 
+.panel.span-2 {
+  grid-column: span 2;
+}
+
+.ops-panels .panel {
+  min-height: 160px;
+}
+
+.job-run-list {
+  display: grid;
+  gap: 10px;
+}
+
+.job-run-list.compact .job-run {
+  padding: 8px 10px;
+}
+
+.job-run {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 12px;
+  display: grid;
+  gap: 4px;
+  align-content: start;
+}
+
+.job-msg {
+  margin: 0;
+  font-size: 0.9rem;
+  color: var(--text);
+}
+
+.small-print {
+  font-size: 0.82rem;
+}
+
+.mono {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.84rem;
+}
+
+.truncate {
+  max-width: min(420px, 100%);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tiny {
+  font-size: 0.78rem;
+}
+
+.ops-inline-2,
+.ops-inline-3 {
+  display: grid;
+  gap: 10px;
+}
+
+.ops-inline-2 {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.ops-inline-3 {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+fieldset.ops-checks,
+fieldset.ops-patch {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 10px 12px;
+  margin: 8px 0 0;
+}
+
+fieldset.ops-checks legend,
+fieldset.ops-patch legend {
+  padding: 0 6px;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+label.check {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  font-size: 0.9rem;
+  margin-top: 6px;
+}
+
 .zone-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -507,6 +596,7 @@ th {
 .inline-form button,
 .stack-buttons button,
 .filter-form input,
+.filter-form textarea,
 .filter-form select,
 .filter-form button {
   border: 1px solid var(--border);
@@ -521,6 +611,7 @@ body[data-theme="light"] .inline-form select,
 body[data-theme="light"] .inline-form button,
 body[data-theme="light"] .stack-buttons button,
 body[data-theme="light"] .filter-form input,
+body[data-theme="light"] .filter-form textarea,
 body[data-theme="light"] .filter-form select,
 body[data-theme="light"] .filter-form button {
   background: rgba(255, 255, 255, 0.9);
@@ -554,6 +645,7 @@ body[data-theme="light"] .filter-form button {
 .main-nav a:focus,
 .stack-buttons button:focus,
 .filter-form input:focus,
+.filter-form textarea:focus,
 .filter-form select:focus,
 .filter-form button:focus {
   outline: none;
@@ -607,6 +699,14 @@ body[data-theme="light"] .filter-form button {
   .stat-grid,
   .panel-grid,
   .zone-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .panel.span-2 {
+    grid-column: span 1;
+  }
+
+  .ops-inline-3 {
     grid-template-columns: 1fr;
   }
 

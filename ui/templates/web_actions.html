@@ -2,19 +2,16 @@
 {% block page_content %}
 <section class="panel-grid">
   <article class="panel">
-    <h3>Operational actions</h3>
-    <p class="muted">Use these controls to simulate pipeline events and send test notifications.</p>
-    <div class="stack-buttons">
-      <form method="post" action="/dev/actions/mark-ingestion">
-        <button type="submit">Mark ingestion as successful</button>
-      </form>
-      <form method="post" action="/dev/actions/mark-anomaly">
-        <button type="submit">Mark anomaly scan as successful</button>
-      </form>
-      <form method="post" action="/dev/actions/send-test-alert">
-        <button type="submit" class="accent">Send Discord test alert</button>
-      </form>
+    <h3>Operational summary</h3>
+    <div class="kv">
+      <span>Raw snapshot files</span>
+      <strong>{{ raw_snapshot_files }}</strong>
     </div>
+    <div class="kv">
+      <span>Price alerts today (UTC)</span>
+      <strong>{{ alerts_today }}</strong>
+    </div>
+    <p class="muted small-print">“Today” starts at UTC midnight (consistent with SQLite timestamps).</p>
   </article>
 
   <article class="panel">
@@ -36,5 +33,176 @@
       <span>{{ health.last_anomaly_scan_at or "n/a" }}</span>
     </div>
   </article>
+</section>
+
+<section class="panel-grid">
+  <article class="panel span-2">
+    <h3>Run ingestion</h3>
+    <p class="muted">Fetches prices, writes <code>data/raw</code> snapshot, inserts into SQLite. Uses <code>STALCRAFTDB_BASE_URL</code> from env when Base URL is empty.</p>
+    <form class="filter-form ops-form" method="post" action="/dev/actions/run-ingestion">
+      <label for="ing-items">Item ids (comma-separated)</label>
+      <input id="ing-items" type="text" name="items" required autocomplete="off" placeholder="v7ar, ak103" />
+
+      <label for="ing-timeout">Timeout (seconds)</label>
+      <input id="ing-timeout" type="number" name="timeout_seconds" value="15" min="3" max="120" />
+
+      <label for="ing-base">Base URL (optional)</label>
+      <input id="ing-base" type="text" name="base_url" autocomplete="off" placeholder="https://stalcraftdb.net/eu" />
+
+      <label for="ing-region">Region (optional)</label>
+      <input id="ing-region" type="text" name="region" autocomplete="off" placeholder="eu" />
+
+      <div class="filter-actions">
+        <button type="submit" class="accent">Run ingestion</button>
+      </div>
+    </form>
+  </article>
+
+  <article class="panel span-2">
+    <h3>Run full pipeline</h3>
+    <p class="muted">Ingestion → anomaly scan → optional patch stage. Check Discord options only if you intend to notify the channel.</p>
+    <form class="filter-form ops-form" method="post" action="/dev/actions/run-pipeline">
+      <label for="pl-items">Item ids (comma-separated)</label>
+      <input id="pl-items" type="text" name="items" required autocomplete="off" placeholder="v7ar" />
+
+      <div class="ops-inline-2">
+        <div>
+          <label for="pl-timeout">Timeout (s)</label>
+          <input id="pl-timeout" type="number" name="timeout_seconds" value="15" min="3" max="120" />
+        </div>
+        <div>
+          <label for="pl-region">Region</label>
+          <input id="pl-region" type="text" name="region" placeholder="eu" />
+        </div>
+      </div>
+
+      <label for="pl-base">Base URL (optional)</label>
+      <input id="pl-base" type="text" name="base_url" placeholder="https://stalcraftdb.net/eu" />
+
+      <div class="ops-inline-3">
+        <div>
+          <label for="pl-recent">Recent hours</label>
+          <input id="pl-recent" type="number" name="recent_hours" value="48" min="1" />
+        </div>
+        <div>
+          <label for="pl-base-d">Baseline days</label>
+          <input id="pl-base-d" type="number" name="baseline_days" value="7" min="1" />
+        </div>
+        <div>
+          <label for="pl-min">Min samples</label>
+          <input id="pl-min" type="number" name="min_samples" value="6" min="3" />
+        </div>
+      </div>
+
+      <div class="ops-inline-2">
+        <div>
+          <label for="pl-deal">Deal threshold (%)</label>
+          <input id="pl-deal" type="text" name="deal_pct" value="-35" />
+        </div>
+        <div>
+          <label for="pl-spike">Spike threshold (%)</label>
+          <input id="pl-spike" type="text" name="spike_pct" value="60" />
+        </div>
+      </div>
+
+      <fieldset class="ops-checks">
+        <legend>Notifications</legend>
+        <label class="check"><input type="checkbox" name="send_discord" value="1" /> Send Discord on new anomalies</label>
+        <label class="check"><input type="checkbox" name="force_discord_notify" value="1" /> Force Discord (ignore dedupe)</label>
+        <label class="check"><input type="checkbox" name="discord_test" value="1" /> Discord diagnostic embed after scan</label>
+      </fieldset>
+
+      <fieldset class="ops-patch">
+        <legend>Patch (optional)</legend>
+        <label for="pl-pv">Patch version</label>
+        <input id="pl-pv" type="text" name="patch_version" placeholder="1.9.14" autocomplete="off" />
+        <label for="pl-pnf">Patch notes file (repo-relative or absolute)</label>
+        <input id="pl-pnf" type="text" name="patch_notes_file" placeholder="patch.txt" autocomplete="off" />
+        <label for="pl-pn">Or inline patch notes</label>
+        <textarea id="pl-pn" name="patch_notes" rows="3" placeholder="Paste short notes if not using a file"></textarea>
+        <label class="check"><input type="checkbox" name="send_patch_discord" value="1" /> Broadcast patch analysis to Discord (gated)</label>
+      </fieldset>
+
+      <div class="filter-actions">
+        <button type="submit" class="accent">Run pipeline</button>
+      </div>
+    </form>
+  </article>
+</section>
+
+<section class="panel-grid">
+  <article class="panel">
+    <h3>Quick actions</h3>
+    <p class="muted">Lightweight shortcuts — timestamps for health only, or scan without ingestion.</p>
+    <div class="stack-buttons">
+      <form method="post" action="/dev/actions/mark-ingestion">
+        <button type="submit">Mark ingestion as successful</button>
+      </form>
+      <form method="post" action="/dev/actions/mark-anomaly">
+        <button type="submit">Mark anomaly scan as successful</button>
+      </form>
+      <form method="post" action="/dev/actions/send-test-alert">
+        <button type="submit" class="accent">Send Discord test alert</button>
+      </form>
+      <form method="post" action="/dev/actions/run-price-anomalies">
+        <button type="submit">Run price anomaly scan (DB only)</button>
+      </form>
+      <form method="post" action="/dev/actions/run-price-anomalies-discord">
+        <button type="submit" class="accent">Run price anomaly scan + Discord</button>
+      </form>
+    </div>
+  </article>
+
+  <article class="panel">
+    <h3>Last job runs</h3>
+    {% set job_order = ['ingestion', 'pipeline', 'anomaly_scan', 'anomaly_scan_discord'] %}
+    {% if ops_jobs %}
+      <div class="job-run-list compact">
+        {% for key in job_order %}
+          {% if key in ops_jobs %}
+            {% set j = ops_jobs[key] %}
+            <div class="job-run">
+              <span class="badge badge-{{ j.status }}">{{ j.status }}</span>
+              <strong>{{ key }}</strong>
+              <span class="muted tiny">{{ j.duration_ms }} ms</span>
+              <p class="job-msg">{{ j.message }}</p>
+            </div>
+          {% endif %}
+        {% endfor %}
+      </div>
+    {% else %}
+      <p class="muted">No recorded runs yet.</p>
+    {% endif %}
+  </article>
+</section>
+
+<section class="panel">
+  <h3>Recent alert fingerprints</h3>
+  {% if recent_alerts %}
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Time (UTC)</th>
+            <th>Type</th>
+            <th>Item</th>
+            <th>Fingerprint</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in recent_alerts %}
+            <tr>
+              <td>{{ row.created_at }}</td>
+              <td>{{ row.alert_type }}</td>
+              <td>{{ row.item_id }}</td>
+              <td class="mono truncate">{{ row.fingerprint }}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  {% else %}
+    <p class="muted">No alerts in DB yet.</p>
+  {% endif %}
 </section>
 {% endblock %}
