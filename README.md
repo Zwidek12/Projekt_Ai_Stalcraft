@@ -55,6 +55,27 @@ python -c "import os; from notifications.message_builder import build_price_oppo
 
 Jeśli wszystko jest OK, na kanale Discord pojawi się embed z testowym alertem.
 
+## Baza danych lokalnie (`data/market.db`)
+
+Folder `data/` i plik `data/market.db` **nie są w repozytorium** (`.gitignore`). Każdy developer buduje je u siebie po sklonowaniu repo.
+
+Po skonfigurowaniu `.env` (w tym `EXBO_CLIENT_ID` + `EXBO_CLIENT_SECRET`):
+
+```powershell
+mkdir data
+py -3.12 scripts\refresh_item_catalog.py
+py -3.12 scripts\run_full_market_ingestion.py --artifact-only --batch-size 10 --sleep-seconds 1.5
+py -3.12 scripts\run_daily_review.py
+```
+
+Pełny scrape ~107 artefaktów trwa ok. 15–30 minut. W logu ingestion szukaj `exbo=...` (dane z oficjalnego API z `additional.qlt` → prawdziwe rarity na stronie).
+
+Szybki test bez pełnej bazy:
+
+```powershell
+py -3.12 scripts\check_exbo_auth.py --item qoq6
+```
+
 ## Developer Web UI (Stalcraft-style)
 
 Projekt zawiera lekki panel developerski do testowania pipeline i diagnostyki:
